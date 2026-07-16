@@ -38,7 +38,7 @@ function injectExportButton() {
   const existingWrapper = document.getElementById('ktm-export-wrapper');
   if (existingWrapper) return;
 
-  // GitHubのファイル表示画面のアクションバーを探索する
+  // GitHub of ファイル表示画面のアクションバーを探索する
   // (Raw, Blameボタン等が含まれるコンテナ)
   const rawButton = document.querySelector('[data-testid="raw-button"]');
   let actionContainer = null;
@@ -107,60 +107,271 @@ function injectExportButton() {
   }
 }
 
+function getAttachmentsMetadata() {
+  const metadataByUuid = new Map();
+  const markdownBody = document.querySelector('.markdown-body');
+  if (!markdownBody) return [];
+
+  const uuidRegex = /([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/i;
+
+  function getDisplayFilename(element, fallback) {
+    const details = element.closest('details');
+    const summaryName = details?.querySelector('summary span')?.textContent?.trim();
+    return summaryName || element.getAttribute('title')?.trim() || fallback;
+  }
+
+  function addAttachment(url, filename) {
+    const match = url.match(uuidRegex);
+    if (!match || !url) return;
+
+    const uuid = match[1];
+    const existing = metadataByUuid.get(uuid);
+    // videoのsrcよりもsourceの実配信URLを優先し、UUID単位で重複を除去する。
+    if (!existing || url.startsWith('https://')) {
+      metadataByUuid.set(uuid, { uuid, url, filename });
+    }
+  }
+
+  // GitHubの動画はvideo要素ではなく子のsource要素に実URLを持つ場合がある。
+  markdownBody.querySelectorAll('video').forEach(video => {
+    const fallback = `video_${uuidRegex.exec(video.outerHTML)?.[1] || 'attachment'}.mp4`;
+    const filename = getDisplayFilename(video, fallback);
+    addAttachment(
+      video.currentSrc ||
+        video.getAttribute('src') ||
+        video.getAttribute('data-canonical-src') ||
+        video.querySelector('source')?.getAttribute('src') ||
+        video.querySelector('source')?.getAttribute('data-canonical-src') ||
+        '',
+      filename
+    );
+  });
+
+  markdownBody.querySelectorAll('source').forEach(source => {
+    const video = source.closest('video');
+    const fallback = `video_${uuidRegex.exec(source.outerHTML)?.[1] || 'attachment'}.mp4`;
+    addAttachment(
+      source.getAttribute('src') || source.getAttribute('data-canonical-src') || '',
+      getDisplayFilename(video || source, fallback)
+    );
+  });
+
+  // 動画以外の直アップロード添付ファイル。
+  markdownBody.querySelectorAll('a').forEach(a => {
+    const href = a.href || a.getAttribute('href') || a.getAttribute('data-canonical-src') || '';
+    const fallback = a.textContent.trim() || `file_attachment`;
+    addAttachment(href, getDisplayFilename(a, fallback));
+  });
+
+  return [...metadataByUuid.values()];
+}
+
+function showEditionSelector(defaultEdition, onSelect, onCancel) {
+  const existing = document.getElementById('ktm-modal-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'ktm-modal-overlay';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100%';
+  overlay.style.height = '100%';
+  overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+  overlay.style.zIndex = '1000000';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+
+  const modal = document.createElement('div');
+  modal.id = 'ktm-modal-box';
+  modal.style.backgroundColor = 'var(--color-canvas-overlay, #ffffff)';
+  modal.style.color = 'var(--color-fg-default, #24292f)';
+  modal.style.border = '1px solid var(--color-border-default, #d0d7de)';
+  modal.style.borderRadius = '8px';
+  modal.style.padding = '20px';
+  modal.style.width = '350px';
+  modal.style.boxShadow = '0 8px 24px rgba(140, 149, 159, 0.2)';
+  modal.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
+
+  const title = document.createElement('h3');
+  title.textContent = 'エクスポートエディションの選択';
+  title.style.margin = '0 0 15px 0';
+  title.style.fontSize = '16px';
+  title.style.fontWeight = '600';
+
+  const desc = document.createElement('p');
+  desc.textContent = '出力するHTMLのテンプレートエディションを選択してください。';
+  desc.style.margin = '0 0 15px 0';
+  desc.style.fontSize = '12px';
+  desc.style.color = 'var(--color-fg-muted, #57606a)';
+
+  const select = document.createElement('select');
+  select.id = 'ktm-edition-select';
+  select.style.width = '100%';
+  select.style.padding = '6px 12px';
+  select.style.fontSize = '14px';
+  select.style.borderRadius = '6px';
+  select.style.border = '1px solid var(--color-border-default, #d0d7de)';
+  select.style.backgroundColor = 'var(--color-canvas-default, #ffffff)';
+  select.style.color = 'var(--color-fg-default, #24292f)';
+  select.style.marginBottom = '20px';
+  select.style.boxSizing = 'border-box';
+
+  const options = [
+    { value: 'lite', text: 'Lite (ktm-lite.html)' },
+    { value: 'standard', text: 'Standard (ktm-std.html)' },
+    { value: 'full', text: 'Full (ktm-full.html)' }
+  ];
+
+  options.forEach(opt => {
+    const o = document.createElement('option');
+    o.value = opt.value;
+    o.textContent = opt.text;
+    if (opt.value === defaultEdition) {
+      o.selected = true;
+    }
+    select.appendChild(o);
+  });
+
+  const btnContainer = document.createElement('div');
+  btnContainer.style.display = 'flex';
+  btnContainer.style.justifyContent = 'flex-end';
+  btnContainer.style.gap = '8px';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.className = 'btn btn-sm';
+  cancelBtn.style.padding = '5px 16px';
+  cancelBtn.style.fontSize = '14px';
+  cancelBtn.style.fontWeight = '500';
+  cancelBtn.style.borderRadius = '6px';
+  cancelBtn.style.border = '1px solid var(--color-btn-border, #d0d7de)';
+  cancelBtn.style.backgroundColor = 'var(--color-btn-bg, #f6f8fa)';
+  cancelBtn.style.color = 'var(--color-btn-text, #24292f)';
+  cancelBtn.style.cursor = 'pointer';
+
+  const exportBtn = document.createElement('button');
+  exportBtn.textContent = 'エクスポート';
+  exportBtn.className = 'btn btn-sm btn-primary';
+  exportBtn.style.padding = '5px 16px';
+  exportBtn.style.fontSize = '14px';
+  exportBtn.style.fontWeight = '500';
+  exportBtn.style.borderRadius = '6px';
+  exportBtn.style.border = '1px solid rgba(27, 31, 36, 0.15)';
+  exportBtn.style.backgroundColor = 'var(--color-btn-primary-bg, #2da44e)';
+  exportBtn.style.color = 'var(--color-btn-primary-text, #ffffff)';
+  exportBtn.style.cursor = 'pointer';
+
+  function close() {
+    overlay.remove();
+    document.removeEventListener('keydown', handleEsc);
+  }
+
+  function handleEsc(e) {
+    if (e.key === 'Escape') {
+      close();
+      onCancel();
+    }
+  }
+
+  cancelBtn.addEventListener('click', () => {
+    close();
+    onCancel();
+  });
+
+  exportBtn.addEventListener('click', () => {
+    const selected = select.value;
+    close();
+    onSelect(selected);
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      close();
+      onCancel();
+    }
+  });
+
+  document.addEventListener('keydown', handleEsc);
+
+  modal.appendChild(title);
+  modal.appendChild(desc);
+  modal.appendChild(select);
+  btnContainer.appendChild(cancelBtn);
+  btnContainer.appendChild(exportBtn);
+  modal.appendChild(btnContainer);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
 async function handleExportClick(btn) {
   const originalText = btn.textContent;
-  btn.textContent = 'エクスポート中...';
-  btn.disabled = true;
 
-  try {
-    // 1. プレビュー画面からRaw Markdownテキストを取得
-    // GitHubのRaw URLからデータをフェッチするのが確実
-    const rawUrl = location.href
-      .replace('https://github.com/', 'https://raw.githubusercontent.com/')
-      .replace('/blob/', '/');
+  chrome.storage.local.get(['edition'], (settings) => {
+    const defaultEdition = settings.edition || 'lite';
+    showEditionSelector(defaultEdition, async (selectedEdition) => {
+      btn.textContent = 'エクスポート中...';
+      btn.disabled = true;
 
-    const response = await fetch(rawUrl);
-    if (!response.ok) throw new Error('Raw Markdownデータの取得に失敗しました。');
-    const mdText = await response.text();
+      try {
+        const attachmentsMetadata = getAttachmentsMetadata();
 
-    // 2. リポジトリ情報（owner, repo, branch, ファイル名）をURLから抽出
-    const pathParts = location.pathname.split('/');
-    const owner = pathParts[1];
-    const repo = pathParts[2];
-    const branch = pathParts[4];
-    const fileName = pathParts.slice(5).join('/');
+        // 1. プレビュー画面からRaw Markdownテキストを取得
+        const rawUrl = location.href
+          .replace('https://github.com/', 'https://raw.githubusercontent.com/')
+          .replace('/blob/', '/');
 
-    // 3. background script に処理を依頼（フェッチやテンプレート読み込み、rawUrlを引き渡す）
-    chrome.runtime.sendMessage({
-      action: 'exportMarkdown',
-      payload: {
-        mdText,
-        repoInfo: { owner, repo, branch },
-        fileName,
-        rawUrl
+        const response = await fetch(rawUrl);
+        if (!response.ok) throw new Error('Raw Markdownデータの取得に失敗しました。');
+        const mdText = await response.text();
+
+        // 2. リポジトリ情報（owner, repo, branch, ファイル名）をURLから抽出
+        const pathParts = location.pathname.split('/');
+        const owner = pathParts[1];
+        const repo = pathParts[2];
+        const branch = pathParts[4];
+        const fileName = pathParts.slice(5).join('/');
+
+        // 3. background script に処理を依頼
+        chrome.runtime.sendMessage({
+          action: 'exportMarkdown',
+          payload: {
+            mdText,
+            repoInfo: { owner, repo, branch },
+            fileName,
+            rawUrl,
+            attachmentsMetadata,
+            edition: selectedEdition
+          }
+        }, (res) => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+
+          if (chrome.runtime.lastError) {
+            alert(`エラー: ${chrome.runtime.lastError.message}`);
+            return;
+          }
+
+          if (res && res.success) {
+            const { templateHtml, markdown, attachments, outputFileName } = res.payload;
+            downloadGeneratedFile(templateHtml, markdown, attachments, outputFileName);
+          } else {
+            alert(`エクスポートに失敗しました: ${res ? res.error : '不明なエラー'}`);
+          }
+        });
+
+      } catch (err) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        alert(`エラーが発生しました: ${err.message}`);
       }
-    }, (res) => {
+    }, () => {
+      // キャンセル時のコールバック
       btn.textContent = originalText;
       btn.disabled = false;
-
-      if (chrome.runtime.lastError) {
-        alert(`エラー: ${chrome.runtime.lastError.message}`);
-        return;
-      }
-
-      if (res && res.success) {
-        const { templateHtml, markdown, attachments, outputFileName } = res.payload;
-        downloadGeneratedFile(templateHtml, markdown, attachments, outputFileName);
-      } else {
-        alert(`エクスポートに失敗しました: ${res ? res.error : '不明なエラー'}`);
-      }
     });
-
-  } catch (err) {
-    btn.textContent = originalText;
-    btn.disabled = false;
-    alert(`エラーが発生しました: ${err.message}`);
-  }
+  });
 }
 
 function downloadGeneratedFile(templateHtml, markdown, attachments, outputFileName) {
@@ -176,17 +387,37 @@ function downloadGeneratedFile(templateHtml, markdown, attachments, outputFileNa
   finalHtml = finalHtml.replace('<textarea id="editor"></textarea>', `<textarea id="editor">${escapedMarkdown}</textarea>`);
 
   // 2. 添付ファイルを <ul id="fileList"> の中へ <li> + <script> の静的DOM構造としてインジェクション
-  let attachHtml = '';
-  for (const key in attachments) {
-    const dataUrl = attachments[key];
-    // 終了タグのエスケープ（</script> 誤認識によるHTML早期終了防止）
-    const safeDataUrl = dataUrl.replace(/<\/script>/g, '<\\/script>');
-    
-    attachHtml += `<li><script type="text/template" id="attach-${key}" title="${key}">${safeDataUrl}</script><script type="text/template" class="layerContent"></script><script type="text/template" class="trimInfo"></script></li>`;
-  }
-  
-  // テンプレート内の fileList タグに流し込む
-  finalHtml = finalHtml.replace('<ul id="fileList"></ul>', `<ul id="fileList">${attachHtml}</ul>`);
+  // fileListが空の場合だけでなく、既存添付を含む場合にも追記する。
+  // 既に同一IDが存在するものは重複注入しない。
+  finalHtml = finalHtml.replace(
+    /(<ul\s+id=["']fileList["'][^>]*>)([\s\S]*?)(<\/ul>)/i,
+    (wholeMatch, openingTag, existingContent, closingTag) => {
+      let missingAttachHtml = '';
+
+      for (const key in attachments) {
+        const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const existingIdRegex = new RegExp(
+          `\\bid=["']attach-${escapedKey}["']`,
+          'i'
+        );
+        if (!existingIdRegex.test(existingContent)) {
+          const safeKey = key
+            .replace(/&/g, '&' + 'amp;')
+            .replace(/"/g, '&' + 'quot;')
+            .replace(/</g, '&' + 'lt;')
+            .replace(/>/g, '&' + 'gt;');
+          const safeDataUrl = attachments[key].replace(/<\/script>/gi, '<\\/script>');
+          const editDisabled = /^data:image\//i.test(attachments[key]) ? '' : ' disabled';
+
+          // KanTanMarkdown は添付実体の script 要素だけでなく、
+          // 以下の操作UIを含む li を添付一覧の項目として復元する。
+          missingAttachHtml += `<li><script type="text/template" id="attach-${safeKey}" title="${safeKey}">${safeDataUrl}</script><script type="text/template" class="layerContent"></script><script type="text/template" class="trimInfo"></script><button class="upButton">↑</button><button class="downButton">↓</button><input type="text" class="fileName"><button class="insertButton">Insert Tag</button><button class="editButton"${editDisabled}>Edit</button><button class="downloadButton">Download</button><button class="detachButton">×</button></li>`;
+        }
+      }
+
+      return `${openingTag}${existingContent}${missingAttachHtml}${closingTag}`;
+    }
+  );
 
   // Blob を作成してダウンロードを実行
   const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8;' });
