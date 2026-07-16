@@ -65,7 +65,6 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl }) {
 
       imageMap[src] = {
         key: cleanKey,
-        placeholder: `[かんたんMarkdown添付ファイル:${cleanKey}]`,
         originalSrc: src,
         dataUrl: null,
         success: false
@@ -97,15 +96,17 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl }) {
 
   await Promise.all(imagePromises);
 
-  // 5. Markdownテキストの画像記述をかんたんMarkdown仕様の添付挿入独自タグに置換 (フェッチ成功時のみ置換を実行)
+  // 5. Markdownテキストの画像記述を、かんたんMarkdown標準の添付ファイル参照形式（attach:画像キー）に置換 (フェッチ成功時のみ)
   let finalMdText = mdText;
   for (const src in imageMap) {
     const item = imageMap[src];
     if (item.success && item.dataUrl) {
-      // ![]() 形式を置換
+      // ![alt](src) を ![alt](attach:cleanKey) に置換
       const escapeRegex = (str) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
       const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(src)}\\)`, 'g');
-      finalMdText = finalMdText.replace(regex, item.placeholder);
+      finalMdText = finalMdText.replace(regex, (match, alt) => {
+        return `![${alt}](attach:${item.key})`;
+      });
     }
   }
 
