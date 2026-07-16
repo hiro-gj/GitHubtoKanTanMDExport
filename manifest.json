@@ -15,9 +15,7 @@
   "optional_host_permissions": [
     "https://*/*"
   ],
-  "action": {
-    "default_popup": "popup.html"
-  },
+  "action": {},
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
