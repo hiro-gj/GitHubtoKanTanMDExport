@@ -1,4 +1,4 @@
-# GitHubtoKanTanMDExport
+# GitHub to KanTanMD Export
 GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 
 ## 概要
