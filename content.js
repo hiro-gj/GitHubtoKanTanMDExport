@@ -107,6 +107,18 @@ function injectExportButton() {
   }
 }
 
+function getRawMarkdownUrl(fallbackUrl) {
+  const rawButton = document.querySelector('[data-testid="raw-button"]');
+  if (!rawButton) return fallbackUrl;
+
+  const rawLink = rawButton.matches('a[href]')
+    ? rawButton
+    : rawButton.querySelector('a[href]') || rawButton.closest('a[href]');
+
+  const href = rawLink?.getAttribute('href') || rawButton.getAttribute('href');
+  return href ? new URL(href, location.origin).href : fallbackUrl;
+}
+
 function getAttachmentsMetadata() {
   const metadataByUuid = new Map();
   const markdownBody = document.querySelector('.markdown-body');
@@ -317,14 +329,13 @@ async function handleExportClick(btn) {
       try {
         const attachmentsMetadata = getAttachmentsMetadata();
 
-        // 1. プレビュー画面からRaw Markdownテキストを取得
+        // 1. プレビュー画面からRaw Markdownテキストを取得するためのURLを取得
+        // rawUrlは相対画像解決用のcanonicalなURLとして維持し、
+        // 本文取得にはGitHub画面が提供するRawリンクを優先して使用する。
         const rawUrl = location.href
           .replace('https://github.com/', 'https://raw.githubusercontent.com/')
           .replace('/blob/', '/');
-
-        const response = await fetch(rawUrl);
-        if (!response.ok) throw new Error('Raw Markdownデータの取得に失敗しました。');
-        const mdText = await response.text();
+        const markdownFetchUrl = getRawMarkdownUrl(rawUrl);
 
         // 2. リポジトリ情報（owner, repo, branch, ファイル名）をURLから抽出
         const pathParts = location.pathname.split('/');
@@ -333,11 +344,11 @@ async function handleExportClick(btn) {
         const branch = pathParts[4];
         const fileName = pathParts.slice(5).join('/');
 
-        // 3. background script に処理を依頼
+        // 3. background script にフェッチおよび処理を依頼（CORS回避のため、フェッチはBackground側で実行）
         chrome.runtime.sendMessage({
           action: 'exportMarkdown',
           payload: {
-            mdText,
+            markdownFetchUrl,
             repoInfo: { owner, repo, branch },
             fileName,
             rawUrl,

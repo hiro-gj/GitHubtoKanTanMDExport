@@ -11,12 +11,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function handleExport({ mdText, repoInfo, fileName, rawUrl, attachmentsMetadata, edition: payloadEdition }) {
+async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, attachmentsMetadata, edition: payloadEdition }) {
   // 1. 設定情報を取得
   const settings = await chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition']);
   const repoType = settings.repo_type || 'original';
   const customRepoUrl = settings.custom_repo_url || '';
   const edition = payloadEdition || settings.edition || 'lite';
+
+  // 1.5 BackgroundからMarkdownデータをフェッチ
+  let mdText = '';
+  try {
+    const mdResponse = await fetch(markdownFetchUrl);
+    if (!mdResponse.ok) {
+      throw new Error(`Raw Markdownデータの取得に失敗しました（HTTP ${mdResponse.status}）。`);
+    }
+    mdText = await mdResponse.text();
+  } catch (err) {
+    throw new Error(`Raw Markdownデータの取得に失敗しました: ${err.message}`);
+  }
 
   // 2. テンプレートHTMLのURLを決定
   let templateBaseUrl = 'https://tatesuke.github.io/KanTanMarkdown';
