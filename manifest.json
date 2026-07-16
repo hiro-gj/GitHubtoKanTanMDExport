@@ -1,20 +1,27 @@
 {
   "manifest_version": 3,
-  "name": "GitHubMarkdown→かんたんMarkdown変換 拡張機能",
+  "name": "GitHub to KanTanMarkdown Export",
   "version": "1.0.0",
-  "description": "GitHub上のMarkdownプレビューページから「かんたんMarkdown」形式のHTMLをエクスポートします。",
+  "description": "GitHubのMarkdownプレビュー画面から、かんたんMarkdown形式の静的HTMLをアタッチメントごとパッケージングしてエクスポートします。",
   "permissions": [
-    "storage",
-    "downloads"
+    "storage"
   ],
   "host_permissions": [
     "https://github.com/*",
     "https://*.github.io/*",
-    "https://raw.githubusercontent.com/*"
+    "https://raw.githubusercontent.com/*",
+    "https://*.githubusercontent.com/*"
   ],
   "optional_host_permissions": [
     "https://*/*"
   ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "background": {
     "service_worker": "background.js"
   },
@@ -25,12 +32,7 @@
       ],
       "js": [
         "content.js"
-      ],
-      "run_at": "document_end"
+      ]
     }
-  ],
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": true
-  }
+  ]
 }
