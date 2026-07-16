@@ -1,0 +1,39 @@
+name: Release Chrome Extension
+
+on:
+  push:
+    tags:
+      - 'v*' # v1.0.0 のようなタグプッシュで起動
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Extension Zip Package
+        run: |
+          # 拡張機能に必要なソースコードをzipアーカイブ化
+          zip -r github-to-kantan-markdown.zip manifest.json background.js content.js options.html options.js LICENSE README.md
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: github-to-kantan-markdown.zip
+          draft: false
+          prerelease: false
+          body: |
+            ## GitHubMarkdown→かんたんMarkdown変換 拡張機能のリリース
+            インストール方法:
+            1. 添付の `github-to-kantan-markdown.zip` をダウンロードして解凍します。
+            2. Google Chrome で `chrome://extensions/` を開きます。
+            3. 右上の「デベロッパー モード」を有効にします。
+            4. 「パッケージ化されていない拡張機能を読み込む」ボタンをクリックし、解凍したフォルダを選択します。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

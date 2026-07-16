@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "GitHubMarkdown→かんたんMarkdown変換 拡張機能",
+  "version": "1.0.0",
+  "description": "GitHub上のMarkdownプレビューページから「かんたんMarkdown」形式のHTMLをエクスポートします。",
+  "permissions": [
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://github.com/*",
+    "https://*.github.io/*",
+    "https://raw.githubusercontent.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://github.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}
