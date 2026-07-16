@@ -38,7 +38,7 @@ function injectExportButton() {
   const existingWrapper = document.getElementById('ktm-export-wrapper');
   if (existingWrapper) return;
 
-  // GitHubのファイル表示画面のアクションバーを探索する
+  // GitHub of ファイル表示画面のアクションバーを探索する
   // (Raw, Blameボタン等が含まれるコンテナ)
   const rawButton = document.querySelector('[data-testid="raw-button"]');
   let actionContainer = null;
@@ -105,6 +105,65 @@ function injectExportButton() {
   } else {
     actionContainer.appendChild(btn);
   }
+}
+
+function getAttachmentsMetadata() {
+  const metadataByUuid = new Map();
+  const markdownBody = document.querySelector('.markdown-body');
+  if (!markdownBody) return [];
+
+  const uuidRegex = /([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/i;
+
+  function getDisplayFilename(element, fallback) {
+    const details = element.closest('details');
+    const summaryName = details?.querySelector('summary span')?.textContent?.trim();
+    return summaryName || element.getAttribute('title')?.trim() || fallback;
+  }
+
+  function addAttachment(url, filename) {
+    const match = url.match(uuidRegex);
+    if (!match || !url) return;
+
+    const uuid = match[1];
+    const existing = metadataByUuid.get(uuid);
+    // videoのsrcよりもsourceの実配信URLを優先し、UUID単位で重複を除去する。
+    if (!existing || url.startsWith('https://')) {
+      metadataByUuid.set(uuid, { uuid, url, filename });
+    }
+  }
+
+  // GitHubの動画はvideo要素ではなく子のsource要素に実URLを持つ場合がある。
+  markdownBody.querySelectorAll('video').forEach(video => {
+    const fallback = `video_${uuidRegex.exec(video.outerHTML)?.[1] || 'attachment'}.mp4`;
+    const filename = getDisplayFilename(video, fallback);
+    addAttachment(
+      video.currentSrc ||
+        video.getAttribute('src') ||
+        video.getAttribute('data-canonical-src') ||
+        video.querySelector('source')?.getAttribute('src') ||
+        video.querySelector('source')?.getAttribute('data-canonical-src') ||
+        '',
+      filename
+    );
+  });
+
+  markdownBody.querySelectorAll('source').forEach(source => {
+    const video = source.closest('video');
+    const fallback = `video_${uuidRegex.exec(source.outerHTML)?.[1] || 'attachment'}.mp4`;
+    addAttachment(
+      source.getAttribute('src') || source.getAttribute('data-canonical-src') || '',
+      getDisplayFilename(video || source, fallback)
+    );
+  });
+
+  // 動画以外の直アップロード添付ファイル。
+  markdownBody.querySelectorAll('a').forEach(a => {
+    const href = a.href || a.getAttribute('href') || a.getAttribute('data-canonical-src') || '';
+    const fallback = a.textContent.trim() || `file_attachment`;
+    addAttachment(href, getDisplayFilename(a, fallback));
+  });
+
+  return [...metadataByUuid.values()];
 }
 
 function showEditionSelector(defaultEdition, onSelect, onCancel) {
@@ -256,8 +315,9 @@ async function handleExportClick(btn) {
       btn.disabled = true;
 
       try {
+        const attachmentsMetadata = getAttachmentsMetadata();
+
         // 1. プレビュー画面からRaw Markdownテキストを取得
-        // GitHubのRaw URLからデータをフェッチするのが確実
         const rawUrl = location.href
           .replace('https://github.com/', 'https://raw.githubusercontent.com/')
           .replace('/blob/', '/');
@@ -273,7 +333,7 @@ async function handleExportClick(btn) {
         const branch = pathParts[4];
         const fileName = pathParts.slice(5).join('/');
 
-        // 3. background script に処理を依頼（フェッチやテンプレート読み込み、rawUrlを引き渡す）
+        // 3. background script に処理を依頼
         chrome.runtime.sendMessage({
           action: 'exportMarkdown',
           payload: {
@@ -281,6 +341,7 @@ async function handleExportClick(btn) {
             repoInfo: { owner, repo, branch },
             fileName,
             rawUrl,
+            attachmentsMetadata,
             edition: selectedEdition
           }
         }, (res) => {
@@ -326,17 +387,37 @@ function downloadGeneratedFile(templateHtml, markdown, attachments, outputFileNa
   finalHtml = finalHtml.replace('<textarea id="editor"></textarea>', `<textarea id="editor">${escapedMarkdown}</textarea>`);
 
   // 2. 添付ファイルを <ul id="fileList"> の中へ <li> + <script> の静的DOM構造としてインジェクション
-  let attachHtml = '';
-  for (const key in attachments) {
-    const dataUrl = attachments[key];
-    // 終了タグのエスケープ（</script> 誤認識によるHTML早期終了防止）
-    const safeDataUrl = dataUrl.replace(/<\/script>/g, '<\\/script>');
-    
-    attachHtml += `<li><script type="text/template" id="attach-${key}" title="${key}">${safeDataUrl}</script><script type="text/template" class="layerContent"></script><script type="text/template" class="trimInfo"></script></li>`;
-  }
-  
-  // テンプレート内の fileList タグに流し込む
-  finalHtml = finalHtml.replace('<ul id="fileList"></ul>', `<ul id="fileList">${attachHtml}</ul>`);
+  // fileListが空の場合だけでなく、既存添付を含む場合にも追記する。
+  // 既に同一IDが存在するものは重複注入しない。
+  finalHtml = finalHtml.replace(
+    /(<ul\s+id=["']fileList["'][^>]*>)([\s\S]*?)(<\/ul>)/i,
+    (wholeMatch, openingTag, existingContent, closingTag) => {
+      let missingAttachHtml = '';
+
+      for (const key in attachments) {
+        const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const existingIdRegex = new RegExp(
+          `\\bid=["']attach-${escapedKey}["']`,
+          'i'
+        );
+        if (!existingIdRegex.test(existingContent)) {
+          const safeKey = key
+            .replace(/&/g, '&' + 'amp;')
+            .replace(/"/g, '&' + 'quot;')
+            .replace(/</g, '&' + 'lt;')
+            .replace(/>/g, '&' + 'gt;');
+          const safeDataUrl = attachments[key].replace(/<\/script>/gi, '<\\/script>');
+          const editDisabled = /^data:image\//i.test(attachments[key]) ? '' : ' disabled';
+
+          // KanTanMarkdown は添付実体の script 要素だけでなく、
+          // 以下の操作UIを含む li を添付一覧の項目として復元する。
+          missingAttachHtml += `<li><script type="text/template" id="attach-${safeKey}" title="${safeKey}">${safeDataUrl}</script><script type="text/template" class="layerContent"></script><script type="text/template" class="trimInfo"></script><button class="upButton">↑</button><button class="downButton">↓</button><input type="text" class="fileName"><button class="insertButton">Insert Tag</button><button class="editButton"${editDisabled}>Edit</button><button class="downloadButton">Download</button><button class="detachButton">×</button></li>`;
+        }
+      }
+
+      return `${openingTag}${existingContent}${missingAttachHtml}${closingTag}`;
+    }
+  );
 
   // Blob を作成してダウンロードを実行
   const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8;' });

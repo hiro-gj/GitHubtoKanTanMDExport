@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function handleExport({ mdText, repoInfo, fileName, rawUrl, edition: payloadEdition }) {
+async function handleExport({ mdText, repoInfo, fileName, rawUrl, attachmentsMetadata, edition: payloadEdition }) {
   // 1. 設定情報を取得
   const settings = await chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition']);
   const repoType = settings.repo_type || 'original';
@@ -50,17 +50,28 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl, edition: paylo
 
   // 4. 画像URLを抽出してフェッチ＆Base64エンコード
   const imgPattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  const htmlImgPattern = /<img[^>]+src=["']([^"']+)["']/gi;
   let match;
   const imagePromises = [];
   const imageMap = {};
 
+  // (A) Markdown記法画像
   while ((match = imgPattern.exec(mdText)) !== null) {
     const src = match[2];
+    addImageToMap(src);
+  }
 
-    // 重複を避けてフェッチ
+  // (B) HTML <img> 画像
+  while ((match = htmlImgPattern.exec(mdText)) !== null) {
+    const src = match[1];
+    addImageToMap(src);
+  }
+
+  function addImageToMap(src) {
     if (!imageMap[src]) {
-      // 異なるパスの同名ファイルの衝突を防ぐため、フルパスから一意のキー（ファイル名）を生成する
-      const cleanKey = src.replace(/[^a-zA-Z0-9.-]/g, '_');
+      // パスを除去してファイル名のみから一意のキー（cleanKey）を生成する
+      const filename = src.split('/').pop().split('?')[0];
+      const cleanKey = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
 
       imageMap[src] = {
         key: cleanKey,
@@ -93,19 +104,72 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl, edition: paylo
     }
   }
 
+  // (C) attachmentsMetadata (動画・ドキュメントなどの添付ファイル) の並列フェッチ
+  const attachmentMap = {};
+  if (attachmentsMetadata && Array.isArray(attachmentsMetadata)) {
+    attachmentsMetadata.forEach(item => {
+      const cleanKey = item.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+      attachmentMap[item.uuid] = {
+        key: cleanKey,
+        filename: item.filename,
+        uuid: item.uuid,
+        url: item.url,
+        dataUrl: null,
+        success: false
+      };
+
+      const p = fetchImageAsBase64(item.url)
+        .then(dataUrl => {
+          attachmentMap[item.uuid].dataUrl = dataUrl;
+          attachmentMap[item.uuid].success = true;
+        })
+        .catch(err => {
+          console.warn(`添付ファイルの取得に失敗しました: ${item.filename}`, err);
+          attachmentMap[item.uuid].success = false;
+        });
+      imagePromises.push(p);
+    });
+  }
+
   await Promise.all(imagePromises);
 
-  // 5. Markdownテキストの画像記述を、かんたんMarkdown標準の添付ファイル参照形式（attach:画像キー）に置換 (フェッチ成功時のみ)
+  // 5. Markdownテキストの画像記述、およびHTML画像、添付ファイルの置換
   let finalMdText = mdText;
+
+  // (A) 画像（Markdown ＆ HTML）の置換
   for (const src in imageMap) {
     const item = imageMap[src];
     if (item.success && item.dataUrl) {
-      // ![alt](src) を ![alt](attach:cleanKey) に置換
       const escapeRegex = (str) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(src)}\\)`, 'g');
-      finalMdText = finalMdText.replace(regex, (match, alt) => {
+      const escapedSrc = escapeRegex(src);
+
+      // Markdown画像 ![alt](src) を ![alt](attach:cleanKey) に置換
+      const mdRegex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedSrc}\\)`, 'g');
+      finalMdText = finalMdText.replace(mdRegex, (match, alt) => {
         return `![${alt}](attach:${item.key})`;
       });
+
+      // HTML画像 <img ... src="src" ...> を <img ... src="attach:cleanKey" ...> に置換
+      const htmlRegex = new RegExp(`(<img[^>]+src=["'])${escapedSrc}(["'])`, 'gi');
+      finalMdText = finalMdText.replace(htmlRegex, `$1attach:${item.key}$2`);
+    }
+  }
+
+  // (B) 添付ファイルの置換
+  for (const uuid in attachmentMap) {
+    const item = attachmentMap[uuid];
+    if (item.success && item.dataUrl) {
+      // Markdownリンク [text](https://github.com/user-attachments/assets/UUID) の置換
+      const mdLinkRegex = new RegExp(`\\[([^\\]]*)\\]\\(https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}\\)`, 'g');
+      finalMdText = finalMdText.replace(mdLinkRegex, `[$1](attach:${item.key})`);
+
+      // HTML属性 src="https://github.com/user-attachments/assets/UUID" または href="..." の置換
+      const htmlAttrRegex = new RegExp(`(src|href)=["']https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}["']`, 'g');
+      finalMdText = finalMdText.replace(htmlAttrRegex, `$1="attach:${item.key}"`);
+
+      // 生のURL https://github.com/user-attachments/assets/UUID を置換。ideal形式に合わせて [filename](attach:cleanKey) に置換する
+      const rawUrlRegex = new RegExp(`https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}`, 'g');
+      finalMdText = finalMdText.replace(rawUrlRegex, `[${item.filename}](attach:${item.key})`);
     }
   }
 
@@ -113,6 +177,12 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl, edition: paylo
   const attachments = {};
   for (const src in imageMap) {
     const item = imageMap[src];
+    if (item.success && item.dataUrl && item.dataUrl.startsWith('data:')) {
+      attachments[item.key] = item.dataUrl;
+    }
+  }
+  for (const uuid in attachmentMap) {
+    const item = attachmentMap[uuid];
     if (item.success && item.dataUrl && item.dataUrl.startsWith('data:')) {
       attachments[item.key] = item.dataUrl;
     }
@@ -129,32 +199,23 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl, edition: paylo
 }
 
 async function fetchImageAsBase64(url) {
-  // 外部ドメインの場合、chrome.permissions (optional_host_permissions) の確認およびゲート処理
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    const origin = new URL(url).origin + '/*';
-    const hasPermission = await chrome.permissions.contains({ origins: [origin] });
-    if (!hasPermission) {
-      // 権限がない場合、バックグラウンドではプロンプトを表示してユーザーに要求できない場合が多いため、
-      // 許可されているオリジン以外へのフェッチをブロックするか、可能な範囲でリクエストを試みる
-      try {
-        const granted = await chrome.permissions.request({ origins: [origin] });
-        if (!granted) {
-          throw new Error(`外部画像へのホスト権限がありません: ${origin}`);
-        }
-      } catch (e) {
-        // バックグラウンドで非インタラクティブにリクエストできない場合は失敗扱いにし、オリジナル画像URLを保持
-        throw new Error(`外部画像へのホスト権限が必要です: ${origin}. エラー: ${e.message}`);
-      }
-    }
-  }
+  // MV3サービスワーカーではFileReaderが利用できないため、Blob.arrayBuffer()で変換する。
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`添付ファイルフェッチエラー: ${response.status}`);
 
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`画像フェッチエラー: ${response.status}`);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+    const blob = await response.blob();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const chunkSize = 0x8000;
+    let binary = '';
+
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+
+    const mimeType = blob.type || 'application/octet-stream';
+    return `data:${mimeType};base64,${btoa(binary)}`;
+  } catch (e) {
+    throw new Error(`添付ファイルのフェッチ失敗: ${url}. エラー: ${e.message}`);
+  }
 }
