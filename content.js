@@ -1,10 +1,18 @@
-// ページのロードおよびSPA遷移（GitHubはTurbo/Pjaxで遷移する）を検知する
+// ページのロードおよびSPA遷移、またGitHubのDOM更新を検知してボタンを挿入する
 let lastUrl = location.href;
+let debounceTimeout = null;
 
 const observer = new MutationObserver(() => {
+  // href変更時の即時再初期化、および同一URL内でのDOM変更に対するデバウンス再初期化
   if (location.href !== lastUrl) {
     lastUrl = location.href;
     init();
+  } else {
+    // 同一URL内の部分更新に追従するためデバウンス実行
+    clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
+      init();
+    }, 500);
   }
 });
 observer.observe(document, { subtree: true, childList: true });
@@ -24,11 +32,11 @@ function isMarkdownPage() {
 }
 
 function injectExportButton() {
-  // 既存のボタンおよびラッパーがある場合は一旦削除
-  const existingWrapper = document.getElementById('ktm-export-wrapper');
-  if (existingWrapper) existingWrapper.remove();
+  // 重複挿入を防止：すでにボタンが存在する場合は何もせず終了
   const existingBtn = document.getElementById('ktm-export-btn');
-  if (existingBtn) existingBtn.remove();
+  if (existingBtn) return;
+  const existingWrapper = document.getElementById('ktm-export-wrapper');
+  if (existingWrapper) return;
 
   // GitHubのファイル表示画面のアクションバーを探索する
   // (Raw, Blameボタン等が含まれるコンテナ)
@@ -122,13 +130,14 @@ async function handleExportClick(btn) {
     const branch = pathParts[4];
     const fileName = pathParts.slice(5).join('/');
 
-    // 3. background script に処理を依頼（フェッチやテンプレート読み込み）
+    // 3. background script に処理を依頼（フェッチやテンプレート読み込み、rawUrlを引き渡す）
     chrome.runtime.sendMessage({
       action: 'exportMarkdown',
       payload: {
         mdText,
         repoInfo: { owner, repo, branch },
-        fileName
+        fileName,
+        rawUrl
       }
     }, (res) => {
       btn.textContent = originalText;
@@ -164,13 +173,17 @@ function downloadGeneratedFile(templateHtml, markdown, attachments, outputFileNa
   
   let finalHtml = templateHtml;
 
+  // </script> の誤認識によるスクリプトの早期終了を防ぐため、JSON文字列化の際に対象の終了タグをエスケープする
+  const safeMarkdown = JSON.stringify(markdown).replace(/<\/script>/g, '<\\/script>');
+  const safeAttachments = JSON.stringify(attachments).replace(/<\/script>/g, '<\\/script>');
+
   // 添付ファイル（attachments）およびMarkdownをHTMLの中に埋め込む（スクリプトインジェクションなど）
   // かんたんMarkdownのLite/Standard/FullはHTML内の特定の要素や変数をパースするため、その定義に沿わせる
   const configScript = `
 <script>
   window.KTM_CONFIG = {
-    markdown: ${JSON.stringify(markdown)},
-    attachments: ${JSON.stringify(attachments)}
+    markdown: ${safeMarkdown},
+    attachments: ${safeAttachments}
   };
   
   // ロード時に自動挿入する処理

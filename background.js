@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function handleExport({ mdText, repoInfo, fileName }) {
+async function handleExport({ mdText, repoInfo, fileName, rawUrl }) {
   // 1. 設定情報を取得
   const settings = await chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition']);
   const repoType = settings.repo_type || 'original';
@@ -29,7 +29,14 @@ async function handleExport({ mdText, repoInfo, fileName }) {
       templateBaseUrl = `https://${username}.github.io/${repo}`;
     }
   }
-  const templateHtmlUrl = `${templateBaseUrl}/dist/ktm-${edition}.html`;
+
+  const editionTemplates = {
+    lite: 'ktm-lite.html',
+    standard: 'ktm-std.htm',
+    full: 'ktm-full.html'
+  };
+  const templateFile = editionTemplates[edition] || 'ktm-lite.html';
+  const templateHtmlUrl = `${templateBaseUrl}/dist/${templateFile}`;
 
   // 3. テンプレートHTMLをフェッチ
   let templateHtml;
@@ -53,28 +60,36 @@ async function handleExport({ mdText, repoInfo, fileName }) {
 
     // 重複を避けてフェッチ
     if (!imageMap[src]) {
+      // 異なるパスの同名ファイルの衝突を防ぐため、フルパスから一意のキー（ファイル名）を生成する
+      const cleanKey = src.replace(/[^a-zA-Z0-9.-]/g, '_');
+
       imageMap[src] = {
-        placeholder: `[かんたんMarkdown添付ファイル:${src.split('/').pop()}]`,
+        key: cleanKey,
+        placeholder: `[かんたんMarkdown添付ファイル:${cleanKey}]`,
         originalSrc: src,
-        dataUrl: null
+        dataUrl: null,
+        success: false
       };
       
-      // 絶対URLに解決
+      // 絶対URLに解決 (new URL を使用し、rawUrl基準で ./ や ../ を解決)
       let absoluteSrc = src;
       if (!src.startsWith('http://') && !src.startsWith('https://')) {
-        // 相対パスの場合はGitHub上の絶対Rawパスに変換する
-        // 例: https://raw.githubusercontent.com/{owner}/{repo}/refs/heads/{branch}/{path}
-        absoluteSrc = `https://raw.githubusercontent.com/${repoInfo.owner}/${repoInfo.repo}/refs/heads/${repoInfo.branch}/${src.replace(/^\.\//, '')}`;
+        try {
+          absoluteSrc = new URL(src, rawUrl).href;
+        } catch (e) {
+          // フォールバック
+          absoluteSrc = `https://raw.githubusercontent.com/${repoInfo.owner}/${repoInfo.repo}/refs/heads/${repoInfo.branch}/${src.replace(/^\.\//, '')}`;
+        }
       }
 
       const p = fetchImageAsBase64(absoluteSrc)
         .then(dataUrl => {
           imageMap[src].dataUrl = dataUrl;
+          imageMap[src].success = true;
         })
         .catch(err => {
           console.warn(`画像の取得に失敗しました: ${src}`, err);
-          // 失敗した場合は元のURLをそのまま使用する
-          imageMap[src].dataUrl = src;
+          imageMap[src].success = false;
         });
       imagePromises.push(p);
     }
@@ -82,14 +97,16 @@ async function handleExport({ mdText, repoInfo, fileName }) {
 
   await Promise.all(imagePromises);
 
-  // 5. Markdownテキストの画像記述をかんたんMarkdown仕様の添付挿入独自タグに置換
+  // 5. Markdownテキストの画像記述をかんたんMarkdown仕様の添付挿入独自タグに置換 (フェッチ成功時のみ置換を実行)
   let finalMdText = mdText;
   for (const src in imageMap) {
     const item = imageMap[src];
-    // ![]() 形式を置換
-    const escapeRegex = (str) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(src)}\\)`, 'g');
-    finalMdText = finalMdText.replace(regex, item.placeholder);
+    if (item.success && item.dataUrl) {
+      // ![]() 形式を置換
+      const escapeRegex = (str) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const regex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapeRegex(src)}\\)`, 'g');
+      finalMdText = finalMdText.replace(regex, item.placeholder);
+    }
   }
 
   // 6. パッケージ用のデータオブジェクトを作成
@@ -103,13 +120,12 @@ async function handleExport({ mdText, repoInfo, fileName }) {
   // <script type="text/markdown" id="source">...</script> や添付ファイルをインジェクションする
   
   // テンプレートから変換。ここでは、成果物HTMLを構成する。
-  // 添付ファイルオブジェクトの構築
+  // 添付ファイルオブジェクトの構築 (フェッチ成功時のみ)
   const attachments = {};
   for (const src in imageMap) {
     const item = imageMap[src];
-    if (item.dataUrl && item.dataUrl.startsWith('data:')) {
-      const filename = src.split('/').pop();
-      attachments[filename] = item.dataUrl;
+    if (item.success && item.dataUrl && item.dataUrl.startsWith('data:')) {
+      attachments[item.key] = item.dataUrl;
     }
   }
 
@@ -124,6 +140,25 @@ async function handleExport({ mdText, repoInfo, fileName }) {
 }
 
 async function fetchImageAsBase64(url) {
+  // 外部ドメインの場合、chrome.permissions (optional_host_permissions) の確認およびゲート処理
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    const origin = new URL(url).origin + '/*';
+    const hasPermission = await chrome.permissions.contains({ origins: [origin] });
+    if (!hasPermission) {
+      // 権限がない場合、バックグラウンドではプロンプトを表示してユーザーに要求できない場合が多いため、
+      // 許可されているオリジン以外へのフェッチをブロックするか、可能な範囲でリクエストを試みる
+      try {
+        const granted = await chrome.permissions.request({ origins: [origin] });
+        if (!granted) {
+          throw new Error(`外部画像へのホスト権限がありません: ${origin}`);
+        }
+      } catch (e) {
+        // バックグラウンドで非インタラクティブにリクエストできない場合は失敗扱いにし、オリジナル画像URLを保持
+        throw new Error(`外部画像へのホスト権限が必要です: ${origin}. エラー: ${e.message}`);
+      }
+    }
+  }
+
   const response = await fetch(url);
   if (!response.ok) throw new Error(`画像フェッチエラー: ${response.status}`);
   const blob = await response.blob();

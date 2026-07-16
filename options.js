@@ -66,23 +66,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const username = match[1];
     const repo = match[2];
-    // GitHub Pagesのktm-lite.htmlにアクセス
-    const targetUrl = `https://${username}.github.io/${repo}/dist/ktm-lite.html`;
+    
+    // 選択されているエディションを取得して、対応するテンプレートを検証する
+    const selectedEdition = document.querySelector('input[name="edition"]:checked').value;
+    const editionTemplates = {
+      lite: 'ktm-lite.html',
+      standard: 'ktm-std.htm',
+      full: 'ktm-full.html'
+    };
+    const templateFile = editionTemplates[selectedEdition] || 'ktm-lite.html';
+    const targetUrl = `https://${username}.github.io/${repo}/dist/${templateFile}`;
 
-    fetch(targetUrl, { method: 'HEAD' })
-      .then(response => {
-        if (response.ok) {
-          testResult.textContent = '接続成功：かんたんMarkdownテンプレートを検出しました。';
-          testResult.className = 'success';
-        } else {
-          testResult.textContent = '接続テストエラー：テンプレートが見つかりません。GitHub Pagesの公開状態を確認してください。';
+    // オプションホスト権限（任意のGitHub Pages等）の権限確認とゲート処理
+    const origin = new URL(targetUrl).origin + '/*';
+    chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+      if (!hasPermission) {
+        chrome.permissions.request({ origins: [origin] }, (granted) => {
+          if (granted) {
+            executeFetch();
+          } else {
+            testResult.textContent = '接続失敗：拡張機能へのホスト権限の承認が拒否されました。';
+            testResult.className = 'error';
+          }
+        });
+      } else {
+        executeFetch();
+      }
+    });
+
+    function executeFetch() {
+      fetch(targetUrl, { method: 'HEAD' })
+        .then(response => {
+          if (response.ok) {
+            testResult.textContent = '接続成功：かんたんMarkdownテンプレートを検出しました。';
+            testResult.className = 'success';
+          } else {
+            testResult.textContent = '接続テストエラー：テンプレートが見つかりません。GitHub Pagesの公開状態を確認してください。';
+            testResult.className = 'error';
+          }
+        })
+        .catch(error => {
+          testResult.textContent = '接続失敗：サーバーへの疎通エラーが発生しました。';
           testResult.className = 'error';
-        }
-      })
-      .catch(error => {
-        testResult.textContent = '接続失敗：サーバーへの疎通エラーが発生しました。';
-        testResult.className = 'error';
-      });
+        });
+    }
   });
 
   // 保存ボタンイベント
