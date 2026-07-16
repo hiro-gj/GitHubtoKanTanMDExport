@@ -164,52 +164,29 @@ async function handleExportClick(btn) {
 }
 
 function downloadGeneratedFile(templateHtml, markdown, attachments, outputFileName) {
-  // かんたんMarkdownのHTMLファイルをパッケージングする
-  // テンプレートHTML内にMarkdownと添付ファイル情報を埋め込む
-  // 一般的なかんたんMarkdownの構成：
-  // テンプレート内に `<!-- ktm-markdown -->` のようなプレースホルダーがある、
-  // または独自形式のインジェクション。
-  // 今回は、テンプレートの下部に添付ファイルとmarkdownデータを動的に差し込むコードを埋め込み、単一の自己完結HTMLファイルを構築する
-  
+  // かんたんMarkdownのQuine型単一HTML動作仕様に基づき、HTMLファイルをパッケージングする
   let finalHtml = templateHtml;
 
-  // </script> の誤認識によるスクリプトの早期終了を防ぐため、JSON文字列化の際に対象の終了タグをエスケープする
-  const safeMarkdown = JSON.stringify(markdown).replace(/<\/script>/g, '<\\/script>');
-  const safeAttachments = JSON.stringify(attachments).replace(/<\/script>/g, '<\\/script>');
+  // 1. Markdown本文を <textarea id="editor"> の中へ静的にインジェクション
+  // エディタ（Prettier等）による実体参照への自動逆変換を防ぐため、文字列を分割してエスケープを記述する
+  const escapedMarkdown = markdown
+    .replace(/&/g, '&' + 'amp;')
+    .replace(/</g, '&' + 'lt;')
+    .replace(/>/g, '&' + 'gt;');
+  finalHtml = finalHtml.replace('<textarea id="editor"></textarea>', `<textarea id="editor">${escapedMarkdown}</textarea>`);
 
-  // 添付ファイル（attachments）およびMarkdownをHTMLの中に埋め込む（スクリプトインジェクションなど）
-  // かんたんMarkdownのLite/Standard/FullはHTML内の特定の要素や変数をパースするため、その定義に沿わせる
-  const configScript = `
-<script>
-  window.KTM_CONFIG = {
-    markdown: ${safeMarkdown},
-    attachments: ${safeAttachments}
-  };
-  
-  // ロード時に自動挿入する処理
-  document.addEventListener('DOMContentLoaded', () => {
-    // 既存のかんたんMarkdownローダーにデータを読み込ませるための処理
-    if (window.loadKtmData) {
-      window.loadKtmData(window.KTM_CONFIG.markdown, window.KTM_CONFIG.attachments);
-    } else {
-      // プレースホルダーの要素へ挿入
-      const sourceElem = document.getElementById('source') || document.querySelector('pre#source');
-      if (sourceElem) {
-        sourceElem.textContent = window.KTM_CONFIG.markdown;
-      }
-      // 画像等の読み込みフック
-      window.ktmAttachments = window.KTM_CONFIG.attachments;
-    }
-  });
-</script>
-`;
-
-  // HTMLの </head> または </body> の直前にスクリプトを追加
-  if (finalHtml.includes('</head>')) {
-    finalHtml = finalHtml.replace('</head>', `${configScript}</head>`);
-  } else {
-    finalHtml += configScript;
+  // 2. 添付ファイルを <ul id="fileList"> の中へ <li> + <script> の静的DOM構造としてインジェクション
+  let attachHtml = '';
+  for (const key in attachments) {
+    const dataUrl = attachments[key];
+    // 終了タグのエスケープ（</script> 誤認識によるHTML早期終了防止）
+    const safeDataUrl = dataUrl.replace(/<\/script>/g, '<\\/script>');
+    
+    attachHtml += `<li><script type="text/template" id="attach-${key}" title="${key}">${safeDataUrl}</script><script type="text/template" class="layerContent"></script><script type="text/template" class="trimInfo"></script></li>`;
   }
+  
+  // テンプレート内の fileList タグに流し込む
+  finalHtml = finalHtml.replace('<ul id="fileList"></ul>', `<ul id="fileList">${attachHtml}</ul>`);
 
   // Blob を作成してダウンロードを実行
   const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8;' });
