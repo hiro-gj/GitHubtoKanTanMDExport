@@ -11,12 +11,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-async function handleExport({ mdText, repoInfo, fileName, rawUrl }) {
+async function handleExport({ mdText, repoInfo, fileName, rawUrl, edition: payloadEdition }) {
   // 1. 設定情報を取得
   const settings = await chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition']);
   const repoType = settings.repo_type || 'original';
   const customRepoUrl = settings.custom_repo_url || '';
-  const edition = settings.edition || 'lite';
+  const edition = payloadEdition || settings.edition || 'lite';
 
   // 2. テンプレートHTMLのURLを決定
   let templateBaseUrl = 'https://tatesuke.github.io/KanTanMarkdown';
@@ -32,7 +32,7 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl }) {
 
   const editionTemplates = {
     lite: 'ktm-lite.html',
-    standard: 'ktm-std.htm',
+    standard: 'ktm-std.html',
     full: 'ktm-full.html'
   };
   const templateFile = editionTemplates[edition] || 'ktm-lite.html';
@@ -55,7 +55,6 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl }) {
   const imageMap = {};
 
   while ((match = imgPattern.exec(mdText)) !== null) {
-    const alt = match[1];
     const src = match[2];
 
     // 重複を避けてフェッチ
@@ -111,17 +110,6 @@ async function handleExport({ mdText, repoInfo, fileName, rawUrl }) {
   }
 
   // 6. パッケージ用のデータオブジェクトを作成
-  // かんたんMarkdownのHTMLテンプレート内に設定を注入
-  // テンプレートの末尾などに、<script id="ktm-markdown" type="text/markdown">としてデータを埋め込み、
-  // またはテンプレート内にあるプレースホルダーを置換する処理を記述
-  // 一般的な「かんたんMarkdown」HTMLのインジェクション仕様に準拠
-
-  // テンプレート内の特定の目印、またはエクスポート処理。
-  // かんたんMarkdownは、HTML内に直接Markdownを埋め込むことで変換するため、
-  // <script type="text/markdown" id="source">...</script> や添付ファイルをインジェクションする
-  
-  // テンプレートから変換。ここでは、成果物HTMLを構成する。
-  // 添付ファイルオブジェクトの構築 (フェッチ成功時のみ)
   const attachments = {};
   for (const src in imageMap) {
     const item = imageMap[src];
