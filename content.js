@@ -24,19 +24,34 @@ function isMarkdownPage() {
 }
 
 function injectExportButton() {
-  // 既存のボタンがある場合は一旦削除
+  // 既存のボタンおよびラッパーがある場合は一旦削除
+  const existingWrapper = document.getElementById('ktm-export-wrapper');
+  if (existingWrapper) existingWrapper.remove();
   const existingBtn = document.getElementById('ktm-export-btn');
   if (existingBtn) existingBtn.remove();
 
   // GitHubのファイル表示画面のアクションバーを探索する
   // (Raw, Blameボタン等が含まれるコンテナ)
-  // セレクタはGitHubのDOM構造変更に合わせる必要があるが、代表的なアクションボタンコンテナを指定
-  const actionContainer = document.querySelector('.Box-header .d-flex') || 
-                          document.querySelector('[data-testid="file-action-button-group"]') ||
-                          document.querySelector('.file-header .file-actions');
+  const rawButton = document.querySelector('[data-testid="raw-button"]');
+  let actionContainer = null;
+  let useWrapper = false;
+
+  if (rawButton) {
+    // 最新のReactベースのファイルビューワーのButtonGroupを取得
+    actionContainer = rawButton.closest('[data-component="ButtonGroup"]') || rawButton.parentElement.parentElement;
+    useWrapper = true;
+  }
+
+  if (!actionContainer) {
+    // 従来型/フォールバック用のコンテナを探索
+    actionContainer = document.querySelector('.Box-header .d-flex') || 
+                      document.querySelector('[data-testid="file-action-button-group"]') ||
+                      document.querySelector('.file-header .file-actions');
+  }
 
   if (!actionContainer) return;
 
+  // ボタン要素を生成
   const btn = document.createElement('button');
   btn.id = 'ktm-export-btn';
   btn.className = 'btn btn-sm btn-primary ml-2';
@@ -50,7 +65,38 @@ function injectExportButton() {
     handleExportClick(btn);
   });
 
-  actionContainer.appendChild(btn);
+  if (useWrapper) {
+    // ButtonGroupのレイアウト崩れを防ぐため、他アイテムと同様のラッパーDIVを作成
+    const itemWrapper = document.createElement('div');
+    itemWrapper.id = 'ktm-export-wrapper';
+    
+    // 既存のButtonGroupの子要素のクラス名を模倣
+    const sampleItem = actionContainer.querySelector('div');
+    if (sampleItem && sampleItem.className) {
+      itemWrapper.className = sampleItem.className;
+    }
+    
+    // スタイル調整 (GitHubのReact ButtonGroup内に美しく配置するため)
+    btn.className = 'prc-Button-ButtonBase-9n-Xk BlobViewHeader-module__LinkButton__X9kx2';
+    btn.style.height = '32px';
+    btn.style.padding = '0 12px';
+    btn.style.fontSize = '14px';
+    btn.style.fontWeight = '600';
+    btn.style.borderRadius = '6px';
+    btn.style.cursor = 'pointer';
+    btn.style.border = '1px solid rgba(27, 31, 36, 0.15)';
+    btn.style.backgroundColor = '#2da44e';
+    btn.style.color = '#ffffff';
+    btn.style.marginLeft = '8px';
+    btn.style.display = 'inline-flex';
+    btn.style.alignItems = 'center';
+    btn.style.justifyContent = 'center';
+
+    itemWrapper.appendChild(btn);
+    actionContainer.appendChild(itemWrapper);
+  } else {
+    actionContainer.appendChild(btn);
+  }
 }
 
 async function handleExportClick(btn) {
