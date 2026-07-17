@@ -16,6 +16,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Update Version in manifest.json
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # リリースタグ名から先頭の接頭辞「v」を除去
+          VERSION_TMP=$(echo "$REF_NAME" | sed 's/^v//')
+          
+          # 最初の非数値文字（ドットを除く、例えば _ や - など）以降をすべて除去して正規化
+          # 例：1.0.1_20260716 -> 1.0.1
+          VERSION=$(echo "$VERSION_TMP" | sed 's/[^0-9.].*//')
+          
+          echo "Original tag: $REF_NAME"
+          echo "Normalized version for Chrome Extension: $VERSION"
+          
+          # jqコマンドを使ってmanifest.jsonのversionフィールドを更新
+          jq --arg ver "$VERSION" '.version = $ver' manifest.json > temp.json && mv temp.json manifest.json
+
       - name: Create Extension Zip Package
         run: |
           # 拡張機能に必要なソースコードをzipアーカイブ化
