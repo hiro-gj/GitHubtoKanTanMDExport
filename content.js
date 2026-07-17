@@ -132,15 +132,22 @@ function getAttachmentsMetadata() {
     return summaryName || element.getAttribute('title')?.trim() || fallback;
   }
 
-  function addAttachment(url, filename) {
+  function addAttachment(url, filename, priority = 0) {
     const match = url.match(uuidRegex);
     if (!match || !url) return;
 
     const uuid = match[1];
     const existing = metadataByUuid.get(uuid);
-    // videoのsrcよりもsourceの実配信URLを優先し、UUID単位で重複を除去する。
-    if (!existing || url.startsWith('https://')) {
-      metadataByUuid.set(uuid, { uuid, url, filename });
+
+    // UUIDが重複する場合は、直接アップロード画像の alt 属性など、
+    // 明示的に解決されたファイル名を汎用フォールバック名で上書きしない。
+    // 同一優先度では https の実配信URLを優先し、動画のsource URL選択も維持する。
+    if (
+      !existing ||
+      priority > existing.priority ||
+      (priority === existing.priority && url.startsWith('https://'))
+    ) {
+      metadataByUuid.set(uuid, { uuid, url, filename, priority });
     }
   }
 
@@ -155,7 +162,8 @@ function getAttachmentsMetadata() {
         video.querySelector('source')?.getAttribute('src') ||
         video.querySelector('source')?.getAttribute('data-canonical-src') ||
         '',
-      filename
+      filename,
+      1
     );
   });
 
@@ -164,8 +172,37 @@ function getAttachmentsMetadata() {
     const fallback = `video_${uuidRegex.exec(source.outerHTML)?.[1] || 'attachment'}.mp4`;
     addAttachment(
       source.getAttribute('src') || source.getAttribute('data-canonical-src') || '',
-      getDisplayFilename(video || source, fallback)
+      getDisplayFilename(video || source, fallback),
+      2
     );
+  });
+
+  // GitHubは直アップロード画像の表示URLを、元の
+  // github.com/user-attachments/assets/UUID から
+  // private-user-images.githubusercontent.com/...-UUID.png?... へ変換する。
+  // どちらの形式でもUUIDとalt由来の名前を取得する。
+  markdownBody.querySelectorAll('img').forEach(img => {
+    const src =
+      img.currentSrc ||
+      img.getAttribute('src') ||
+      img.getAttribute('data-canonical-src') ||
+      '';
+    const isUploadedImage =
+      uuidRegex.test(src) &&
+      (
+        src.includes('user-attachments/assets/') ||
+        src.includes('private-user-images.githubusercontent.com/')
+      );
+
+    if (isUploadedImage) {
+      const alt = img.getAttribute('alt')?.trim();
+      const fallback = alt || 'image_attachment';
+      let filename = fallback;
+      if (!/\.[a-zA-Z0-9]+$/.test(filename)) {
+        filename += '.png';
+      }
+      addAttachment(src, getDisplayFilename(img, filename), 3);
+    }
   });
 
   // 動画以外の直アップロード添付ファイル。
@@ -175,7 +212,7 @@ function getAttachmentsMetadata() {
     addAttachment(href, getDisplayFilename(a, fallback));
   });
 
-  return [...metadataByUuid.values()];
+  return [...metadataByUuid.values()].map(({ uuid, url, filename }) => ({ uuid, url, filename }));
 }
 
 function showEditionSelector(defaultEdition, onSelect, onCancel) {

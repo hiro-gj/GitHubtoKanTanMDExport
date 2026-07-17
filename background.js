@@ -73,6 +73,8 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
     addImageToMap(src);
   }
 
+  const uuidRegex = /user-attachments\/assets\/([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/i;
+
   // (B) HTML <img> 画像
   while ((match = htmlImgPattern.exec(mdText)) !== null) {
     const src = match[1];
@@ -81,9 +83,21 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
 
   function addImageToMap(src) {
     if (!imageMap[src]) {
-      // パスを除去してファイル名のみから一意のキー（cleanKey）を生成する
-      const filename = src.split('/').pop().split('?')[0];
-      const cleanKey = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+      // UUIDから添付メタデータに一致するものがあるか確認
+      const uuidMatch = src.match(uuidRegex);
+      let cleanKey = null;
+      if (uuidMatch) {
+        const uuid = uuidMatch[1].toLowerCase();
+        const meta = attachmentsMetadata?.find(m => m.uuid.toLowerCase() === uuid);
+        if (meta) {
+          cleanKey = meta.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+        }
+      }
+
+      if (!cleanKey) {
+        const filename = src.split('/').pop().split('?')[0];
+        cleanKey = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+      }
 
       imageMap[src] = {
         key: cleanKey,
@@ -121,7 +135,7 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
   if (attachmentsMetadata && Array.isArray(attachmentsMetadata)) {
     attachmentsMetadata.forEach(item => {
       const cleanKey = item.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
-      attachmentMap[item.uuid] = {
+      attachmentMap[item.uuid.toLowerCase()] = {
         key: cleanKey,
         filename: item.filename,
         uuid: item.uuid,
@@ -132,12 +146,12 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
 
       const p = fetchImageAsBase64(item.url)
         .then(dataUrl => {
-          attachmentMap[item.uuid].dataUrl = dataUrl;
-          attachmentMap[item.uuid].success = true;
+          attachmentMap[item.uuid.toLowerCase()].dataUrl = dataUrl;
+          attachmentMap[item.uuid.toLowerCase()].success = true;
         })
         .catch(err => {
           console.warn(`添付ファイルの取得に失敗しました: ${item.filename}`, err);
-          attachmentMap[item.uuid].success = false;
+          attachmentMap[item.uuid.toLowerCase()].success = false;
         });
       imagePromises.push(p);
     });
@@ -172,18 +186,28 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
     const item = attachmentMap[uuid];
     if (item.success && item.dataUrl) {
       // Markdownリンク [text](https://github.com/user-attachments/assets/UUID) の置換
-      const mdLinkRegex = new RegExp(`\\[([^\\]]*)\\]\\(https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}\\)`, 'g');
+      const mdLinkRegex = new RegExp(`\\[([^\\]]*)\\]\\(https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}\\)`, 'gi');
       finalMdText = finalMdText.replace(mdLinkRegex, `[$1](attach:${item.key})`);
 
       // HTML属性 src="https://github.com/user-attachments/assets/UUID" または href="..." の置換
-      const htmlAttrRegex = new RegExp(`(src|href)=["']https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}["']`, 'g');
+      const htmlAttrRegex = new RegExp(`(src|href)=["']https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}["']`, 'gi');
       finalMdText = finalMdText.replace(htmlAttrRegex, `$1="attach:${item.key}"`);
 
       // 生のURL https://github.com/user-attachments/assets/UUID を置換。ideal形式に合わせて [filename](attach:cleanKey) に置換する
-      const rawUrlRegex = new RegExp(`https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}`, 'g');
+      const rawUrlRegex = new RegExp(`https:\\/\\/github\\.com\\/user-attachments\\/assets\\/${uuid}`, 'gi');
       finalMdText = finalMdText.replace(rawUrlRegex, `[${item.filename}](attach:${item.key})`);
     }
   }
+
+  // HTML画像の固定サイズ指定はエクスポート時に除去する。
+  // かんたんMarkdown側の表示領域に応じて画像を可変表示できるよう、
+  // <img> 開始タグ内の width / height 属性だけを対象とする。
+  finalMdText = finalMdText.replace(/<img\b[^>]*>/gi, imgTag => {
+    return imgTag.replace(
+      /\s+(?:width|height)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,
+      ''
+    );
+  });
 
   // 6. パッケージ用のデータオブジェクトを作成
   const attachments = {};
@@ -200,7 +224,15 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
     }
   }
 
-  const outputFileName = `${repoInfo.repo}_${fileName.replace(/\.md$/, '')}.html`;
+  let outputFileName = `${repoInfo.repo}_${fileName.replace(/\.md$/, '')}.html`;
+  const h1Match = mdText.match(/^#\s+(.+)$/m);
+  if (h1Match) {
+    const h1Title = h1Match[1].trim();
+    const sanitizedTitle = h1Title.replace(/[\\/:*?"<>|#]/g, '_');
+    if (sanitizedTitle) {
+      outputFileName = `${sanitizedTitle}.html`;
+    }
+  }
 
   return {
     templateHtml: templateHtml,

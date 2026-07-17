@@ -16,6 +16,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Update Version in manifest.json
+        run: |
+          # リリースタグ名（例：v1.0.1_20260716）を取得
+          TAG_NAME="${{ github.ref_name }}"
+          echo "Updating manifest.json version to: $TAG_NAME"
+          
+          # jqコマンドを使ってmanifest.jsonのversionフィールドを更新
+          jq --arg ver "$TAG_NAME" '.version = $ver' manifest.json > temp.json && mv temp.json manifest.json
+
       - name: Create Extension Zip Package
         run: |
           # 拡張機能に必要なソースコードをzipアーカイブ化
