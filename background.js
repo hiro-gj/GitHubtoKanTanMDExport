@@ -33,7 +33,7 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
   // 2. テンプレートHTMLのURLを決定
   let templateBaseUrl = 'https://tatesuke.github.io/KanTanMarkdown';
   if (repoType === 'custom' && customRepoUrl) {
-    const githubRepoPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)$/;
+    const githubRepoPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)$/;
     const match = customRepoUrl.match(githubRepoPattern);
     if (match) {
       const username = match[1];
