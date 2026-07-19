@@ -33,7 +33,7 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
   // 2. テンプレートHTMLのURLを決定
   let templateBaseUrl = 'https://tatesuke.github.io/KanTanMarkdown';
   if (repoType === 'custom' && customRepoUrl) {
-    const githubRepoPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)$/;
+    const githubRepoPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)$/;
     const match = customRepoUrl.match(githubRepoPattern);
     if (match) {
       const username = match[1];
@@ -66,14 +66,13 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
   let match;
   const imagePromises = [];
   const imageMap = {};
+  const uuidRegex = /user-attachments\/assets\/([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/i;
 
   // (A) Markdown記法画像
   while ((match = imgPattern.exec(mdText)) !== null) {
     const src = match[2];
     addImageToMap(src);
   }
-
-  const uuidRegex = /user-attachments\/assets\/([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})/i;
 
   // (B) HTML <img> 画像
   while ((match = htmlImgPattern.exec(mdText)) !== null) {
@@ -114,7 +113,7 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
         } catch (e) {
           // フォールバック
           absoluteSrc = `https://raw.githubusercontent.com/${repoInfo.owner}/${repoInfo.repo}/refs/heads/${repoInfo.branch}/${src.replace(/^\.\//, '')}`;
-        }
+        } 
       }
 
       const p = fetchImageAsBase64(absoluteSrc)
