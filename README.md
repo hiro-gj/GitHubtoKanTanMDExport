@@ -1,6 +1,21 @@
 # GitHub to KanTanMD Export
 GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 
+- **パッケージタイトル**:  
+  `GitHub to KanTanMarkdown Export`
+- **概要（132文字以内）**:  
+  `GitHubのMarkdownドキュメントを単一HTMLで完結するエディタ・プレビューア「かんたんMarkdown」へ画像やファイルもパッケージングして変換エクスポートします。`
+- **詳細な説明（Store Listing Description）**:
+
+  GitHub上のMarkdownドキュメント（.md）を、スタンドアロンで動作するマークダウンエディタ・プレビューア「かんたんMarkdown」形式のHTMLファイルへエクスポートする拡張機能です。
+
+  【主な特徴】
+  ・GitHubのMarkdownプレビュー画面に「かんたんMarkdownへエクスポート」ボタンを自動追加。
+  ・相対画像やGitHubに直接アップロードされた画像やファイル（user-attachments）をBase64化してHTML内に完全パッケージング。
+
+  ※本拡張機能はGitHubのMarkdownプレビュー画面向けに設計されています（日本語環境対応）。
+  This extension is designed to export GitHub markdown documents into standalone slide HTML packages.
+
 ## 概要
 本拡張機能は、GitHub上に格納されているMarkdownドキュメント（*.md）を、手軽にスライド表示・閲覧・共有できるWebツール「かんたんMarkdown」のフォーマットへシームレスにエクスポートするためのブラウザ拡張機能です。
 
