@@ -1,4 +1,7 @@
-# GitHub to KanTanMD Export
+<h1>
+  <img src="icons/icon48.png" width="48" align="middle" /><sub> GitHub to KanTanMD Export</sub>
+</h1>
+
 GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 
 - **スナップショット**:
