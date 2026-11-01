@@ -53,17 +53,17 @@ errorは人向け文字列であり固定のエラーコードなし。FETCH_MD_
 | 画像 | GET | 絶対src、またはnew URL(src, rawUrl) | blobからData URL | warn、置換省略 |
 | DOM添付 | GET | attachmentsMetadata[].url | blobからData URL | warn、置換省略 |
 
-base: 公式 https://tatesuke.github.io/KanTanMarkdown、形式一致するcustomは https://{owner}.github.io/{repo}。
+base: フォーク https://hiro-gj.github.io/KanTanMarkdown、形式一致するcustomは https://{owner}.github.io/{repo}。
 editionFile: lite=ktm-lite.html、standard=ktm-std.html、full=ktm-full.html、未知値=ktm-lite.html。
 独自Authorization/リクエストbody/credentials/AbortController指定なし。認証が必要な資源の取得はブラウザ状態・配信URL・権限による。HTTP ok以外は失敗。テンプレートのContent-Type・editor/fileList構造を検証しない。
 
 ## API-003: 設定ストレージ（FR-003）
 | 呼出元 | Chrome API | 内容 |
 | --- | --- | --- |
-| Options | local.get(['repo_type','custom_repo_url','edition'], callback) | 読込→フォーム |
-| Content Script | local.get(['edition'], callback) | モーダル既定値 |
+| Options | local.get(['language','repo_type','custom_repo_url','edition'], callback) | 読込→フォーム |
+| Content Script | local.get(['language','edition'], callback) | 言語設定・モーダル既定値 |
 | Worker | await local.get(['repo_type','custom_repo_url','edition']) | 配信元・edition fallback |
-| Options | local.set({repo_type, custom_repo_url, edition}, callback) | 保存後通知・終了 |
+| Options | local.set({language, repo_type, custom_repo_url, edition}, callback) | 保存後通知・終了 |
 
 storage権限を使用。データ定義は22。設定の同期、履歴API、DB通信はない。
 
