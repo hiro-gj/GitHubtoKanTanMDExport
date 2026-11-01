@@ -16,11 +16,11 @@ GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 
   GitHub上のMarkdownドキュメント（.md）を、スタンドアロンで動作するマークダウンエディタ・プレビューア「かんたんMarkdown」形式のHTMLファイルへエクスポートする拡張機能です。
 
-  【主な特徴】
-  ・GitHubのMarkdownプレビュー画面に「かんたんMarkdownへエクスポート」ボタンを自動追加。
+  【主な特徴】  
+  ・GitHubのMarkdownプレビュー画面に「かんたんMarkdownへエクスポート」ボタンを自動追加。  
   ・相対画像やGitHubに直接アップロードされた画像やファイル（user-attachments）をBase64化してHTML内に完全パッケージング。
 
-  ※本拡張機能はGitHubのMarkdownプレビュー画面向けに設計されています（日本語環境対応）。
+  ※本拡張機能はGitHubのMarkdownプレビュー画面向けに設計されています（日本語環境対応）。  
   This extension is designed to export GitHub markdown documents into standalone slide HTML packages.
 
 ## 概要
