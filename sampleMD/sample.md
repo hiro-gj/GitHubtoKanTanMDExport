@@ -466,3 +466,42 @@ gantt
     実装               :b1, after a2, 14d
     テスト             :b2, after b1, 7d
 ```
+
+### 円グラフ
+
+```mermaid
+pie title 好きなプログラミング言語
+    "TypeScript" : 45
+    "Python" : 30
+    "Rust" : 15
+    "Go" : 10
+```
+
+### Gitグラフ
+
+```mermaid
+gitGraph
+    commit id: "Initial commit"
+    branch develop
+    checkout develop
+    commit id: "Add feature A"
+    checkout main
+    merge develop
+    commit id: "Release v1.0"
+```
+
+### マインドマップ
+
+```mermaid
+mindmap
+  root((プロジェクト))
+    計画
+      要件定義
+      スケジュール作成
+    実装
+      フロントエンド
+      バックエンド
+    テスト
+      単体テスト
+      結合テスト
+```
