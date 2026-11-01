@@ -169,6 +169,29 @@ test('DOM Simulation - options.js 全機能とユーザー要望の整合性検�
   assert.strictEqual(mockStorage.repo_type, 'fork');
   assert.strictEqual(mockStorage.custom_repo_url, 'https://github.com/hiro-gj/KanTanMarkdown');
   assert.strictEqual(mockStorage.edition, 'lite');
+
+  // 5. サブパス付きカスタムURL (tree/master/dist/preview) の保存および接続テスト検証
+  const fetchedUrls = [];
+  global.fetch = async (url) => {
+    fetchedUrls.push(url);
+    if (url === 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html') {
+      return { ok: true };
+    }
+    return { ok: false };
+  };
+
+  elements.customRadio.click();
+  elements.customUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown/tree/master/dist/preview';
+  elements.testBtn.click();
+  await new Promise(r => setTimeout(r, 20));
+
+  assert.strictEqual(fetchedUrls[0], 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html', 'dist/preview配下のテンプレートURLへ最初にアクセスすること');
+  assert.strictEqual(elements.testResult.textContent, '接続成功：かんたんMarkdownテンプレートを検出しました。', '接続テストが成功すること');
+  assert.strictEqual(elements.testResult.className, 'success');
+
+  elements.saveBtn.click();
+  assert.strictEqual(mockStorage.repo_type, 'custom');
+  assert.strictEqual(mockStorage.custom_repo_url, 'https://github.com/hiro-gj/KanTanMarkdown/tree/master/dist/preview', 'サブパス付きGitHub URLがそのまま保存されること');
 });
 
 let allElements = [];
