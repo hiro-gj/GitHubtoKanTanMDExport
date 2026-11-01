@@ -1,6 +1,13 @@
 # GitHub to KanTanMD Export
 GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 
+- **スナップショット**:
+
+|operation|option|
+|:--:|:--:|
+|<img src="./snapshot/1_operation_en.png" />|<img src="snapshot/2_option_en.png" />|
+|<img src="./snapshot/1_operation_jp.png" />|<img src="snapshot/2_option_jp.png" />|
+
 - **パッケージタイトル**:  
   `GitHub to KanTanMarkdown Export`
 - **概要（132文字以内）**:  
