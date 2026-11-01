@@ -1,4 +1,59 @@
+const i18nDict = {
+  en: {
+    pageTitle: 'KanTanMarkdown Conversion Extension Settings',
+    officialRepoLink: 'KanTanMarkdown Original Repository (Archived) here',
+    labelLanguage: 'Language',
+    labelRepoType: 'KanTanMarkdown Repository Selection',
+    repoOriginal: 'Original (tatesuke) (Unavailable)',
+    repoFork: 'Fork (hiro-gj)',
+    repoCustom: 'Other (Custom Repository URL)',
+    customRepoUrlPlaceholder: 'https://github.com/username/repository',
+    labelEdition: 'Edition Selection',
+    editionLite: 'Lite Edition',
+    editionStandard: 'Standard Edition',
+    editionFull: 'Full Edition',
+    btnSave: 'Save',
+    btnTest: 'Test Connection',
+    btnCancel: 'Cancel',
+    toastSaved: 'Settings saved successfully',
+    alertInvalidUrl: 'Invalid custom repository URL format.',
+    testErrorInvalidUrl: 'Error: Invalid URL format. (e.g. https://github.com/username/repository)',
+    testTesting: 'Testing connection...',
+    testPermissionDenied: 'Connection failed: Host permission was denied.',
+    testSuccess: 'Connection successful: KanTanMarkdown template detected.',
+    testErrorTemplateNotFound: 'Connection test error: Template not found. Please check GitHub Pages publication status.',
+    testErrorNetwork: 'Connection failed: Network or server error occurred.'
+  },
+  ja: {
+    pageTitle: 'かんたんMarkdown変換 拡張機能設定',
+    officialRepoLink: 'かんたんMarkdown オリジナルリポジトリ（アーカイブ）はこちら',
+    labelLanguage: '言語選択',
+    labelRepoType: 'かんたんMarkdownリポジトリ選択',
+    repoOriginal: 'オリジナル(tatesuke) (利用不可)',
+    repoFork: 'フォーク(hiro-gj)',
+    repoCustom: 'その他（カスタムリポジトリURL入力）',
+    customRepoUrlPlaceholder: 'https://github.com/ユーザー名/リポジトリ名',
+    labelEdition: 'エディション選択',
+    editionLite: 'Liteエディション',
+    editionStandard: 'Standardエディション',
+    editionFull: 'Fullエディション',
+    btnSave: '保存',
+    btnTest: '接続テスト',
+    btnCancel: 'キャンセル',
+    toastSaved: '設定を保存しました',
+    alertInvalidUrl: 'カスタムリポジトリURLの形式が正しくありません。',
+    testErrorInvalidUrl: 'エラー：URLの形式が正しくありません。(形式: https://github.com/ユーザー名/リポジトリ名)',
+    testTesting: '接続テスト中...',
+    testPermissionDenied: '接続失敗：拡張機能へのホスト権限の承認が拒否されました。',
+    testSuccess: '接続成功：かんたんMarkdownテンプレートを検出しました。',
+    testErrorTemplateNotFound: '接続テストエラー：テンプレートが見つかりません。GitHub Pagesの公開状態を確認してください。',
+    testErrorNetwork: '接続失敗：サーバーへの疎通エラーが発生しました。'
+  }
+};
+
+
 document.addEventListener('DOMContentLoaded', () => {
+  const languageRadios = document.querySelectorAll('input[name="language"]');
   const repoTypeRadios = document.querySelectorAll('input[name="repo_type"]');
   const customRepoUrlInput = document.getElementById('custom_repo_url');
   const editionRadios = document.querySelectorAll('input[name="edition"]');
@@ -8,21 +63,73 @@ document.addEventListener('DOMContentLoaded', () => {
   const testResult = document.getElementById('test-result');
   const toast = document.getElementById('toast');
 
-  // 設定のロード
-  chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition'], (data) => {
-    if (data.repo_type) {
-      document.querySelector(`input[name="repo_type"][value="${data.repo_type}"]`).checked = true;
-      toggleCustomRepoInput(data.repo_type);
+  let currentLanguage = 'en';
+  let currentTestState = null;
+
+  function applyLanguage(lang) {
+    currentLanguage = lang;
+    const dict = i18nDict[lang] || i18nDict.en;
+    document.documentElement.lang = lang;
+    document.title = dict.pageTitle;
+
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-i18n');
+      if (dict[key]) {
+        el.textContent = dict[key];
+      }
+    });
+
+    if (customRepoUrlInput) {
+      customRepoUrlInput.placeholder = dict.customRepoUrlPlaceholder;
     }
-    if (data.custom_repo_url) {
-      customRepoUrlInput.value = data.custom_repo_url;
+
+    if (currentTestState && dict[currentTestState]) {
+      testResult.textContent = dict[currentTestState];
     }
-    if (data.edition) {
-      const targetEdition = document.querySelector(`input[name="edition"][value="${data.edition}"]`);
+  }
+
+  // 設定のロード（初期値フォールバック含む）
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['language', 'repo_type', 'custom_repo_url', 'edition'], (data) => {
+      const lang = data.language || 'en';
+      currentLanguage = lang;
+      const targetLangRadio = document.querySelector(`input[name="language"][value="${lang}"]`);
+      if (targetLangRadio) {
+        targetLangRadio.checked = true;
+      }
+
+      // オリジナルは動作不能なため、fork を初期選択の基本とする
+      const repoType = (data.repo_type && data.repo_type !== 'original') ? data.repo_type : 'fork';
+      const targetRepoRadio = document.querySelector(`input[name="repo_type"][value="${repoType}"]`);
+      if (targetRepoRadio) {
+        targetRepoRadio.checked = true;
+      }
+      toggleCustomRepoInput(repoType);
+
+      if (repoType === 'custom' && data.custom_repo_url) {
+        customRepoUrlInput.value = data.custom_repo_url;
+      } else {
+        customRepoUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown';
+      }
+
+      const edition = data.edition || 'lite';
+      const targetEdition = document.querySelector(`input[name="edition"][value="${edition}"]`);
       if (targetEdition) {
         targetEdition.checked = true;
       }
-    }
+
+      applyLanguage(lang);
+    });
+  } else {
+    // ブラウザ単体テスト用フォールバック
+    applyLanguage('en');
+  }
+
+  // 言語ラジオボタン変更イベント
+  languageRadios.forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      applyLanguage(e.target.value);
+    });
   });
 
   // ラジオボタン変更イベント
@@ -36,12 +143,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (value === 'custom') {
       customRepoUrlInput.disabled = false;
       testBtn.disabled = false;
+      if (!customRepoUrlInput.value) {
+        customRepoUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown';
+      }
+    } else if (value === 'fork') {
+      customRepoUrlInput.disabled = true;
+      testBtn.disabled = false;
+      customRepoUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown';
     } else {
       customRepoUrlInput.disabled = true;
       testBtn.disabled = true;
       customRepoUrlInput.value = '';
       testResult.textContent = '';
       testResult.className = '';
+      currentTestState = null;
     }
   }
 
@@ -50,92 +165,113 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = customRepoUrlInput.value.trim();
     testResult.textContent = '';
     testResult.className = '';
+    currentTestState = null;
 
-    // バリデーション
+    const dict = i18nDict[currentLanguage] || i18nDict.en;
     const githubRepoPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)$/;
     const match = url.match(githubRepoPattern);
 
     if (!match) {
-      testResult.textContent = 'エラー：URLの形式が正しくありません。(形式: https://github.com/ユーザー名/リポジトリ名)';
+      currentTestState = 'testErrorInvalidUrl';
+      testResult.textContent = dict.testErrorInvalidUrl;
       testResult.className = 'error';
       return;
     }
 
-    testResult.textContent = '接続テスト中...';
+    currentTestState = 'testTesting';
+    testResult.textContent = dict.testTesting;
     testResult.className = '';
 
     const username = match[1];
     const repo = match[2];
-    
-    // 選択されているエディションを取得して、対応するテンプレートを検証する
-    const selectedEdition = document.querySelector('input[name="edition"]:checked').value;
+
+    const selectedEdition = document.querySelector('input[name="edition"]:checked')?.value || 'lite';
     const editionTemplates = {
       lite: 'ktm-lite.html',
-      standard: 'ktm-std.htm',
+      standard: 'ktm-std.html',
       full: 'ktm-full.html'
     };
     const templateFile = editionTemplates[selectedEdition] || 'ktm-lite.html';
     const targetUrl = `https://${username}.github.io/${repo}/dist/${templateFile}`;
 
-    // オプションホスト権限（任意のGitHub Pages等）の権限確認とゲート処理
-    const origin = new URL(targetUrl).origin + '/*';
-    chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
-      if (!hasPermission) {
-        chrome.permissions.request({ origins: [origin] }, (granted) => {
-          if (granted) {
-            executeFetch();
-          } else {
-            testResult.textContent = '接続失敗：拡張機能へのホスト権限の承認が拒否されました。';
-            testResult.className = 'error';
-          }
-        });
-      } else {
-        executeFetch();
-      }
-    });
-
-    function executeFetch() {
+    const executeFetch = () => {
+      const fetchDict = i18nDict[currentLanguage] || i18nDict.en;
       fetch(targetUrl, { method: 'HEAD' })
-        .then(response => {
+        .then((response) => {
           if (response.ok) {
-            testResult.textContent = '接続成功：かんたんMarkdownテンプレートを検出しました。';
+            currentTestState = 'testSuccess';
+            testResult.textContent = fetchDict.testSuccess;
             testResult.className = 'success';
           } else {
-            testResult.textContent = '接続テストエラー：テンプレートが見つかりません。GitHub Pagesの公開状態を確認してください。';
+            currentTestState = 'testErrorTemplateNotFound';
+            testResult.textContent = fetchDict.testErrorTemplateNotFound;
             testResult.className = 'error';
           }
         })
-        .catch(error => {
-          testResult.textContent = '接続失敗：サーバーへの疎通エラーが発生しました。';
+        .catch(() => {
+          currentTestState = 'testErrorNetwork';
+          testResult.textContent = fetchDict.testErrorNetwork;
           testResult.className = 'error';
         });
+    };
+
+    if (typeof chrome !== 'undefined' && chrome.permissions && chrome.permissions.contains) {
+      const origin = new URL(targetUrl).origin + '/*';
+      chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+        if (!hasPermission) {
+          chrome.permissions.request({ origins: [origin] }, (granted) => {
+            if (granted) {
+              executeFetch();
+            } else {
+              currentTestState = 'testPermissionDenied';
+              testResult.textContent = dict.testPermissionDenied;
+              testResult.className = 'error';
+            }
+          });
+        } else {
+          executeFetch();
+        }
+      });
+    } else {
+      executeFetch();
     }
   });
 
   // 保存ボタンイベント
   saveBtn.addEventListener('click', () => {
-    const repoType = document.querySelector('input[name="repo_type"]:checked').value;
-    const customRepoUrl = customRepoUrlInput.value.trim();
-    const edition = document.querySelector('input[name="edition"]:checked').value;
+    const dict = i18nDict[currentLanguage] || i18nDict.en;
+    const repoType = document.querySelector('input[name="repo_type"]:checked')?.value || 'fork';
+    let customRepoUrl = customRepoUrlInput.value.trim();
+    const edition = document.querySelector('input[name="edition"]:checked')?.value || 'lite';
 
-    if (repoType === 'custom') {
+    if (repoType === 'fork') {
+      customRepoUrl = 'https://github.com/hiro-gj/KanTanMarkdown';
+    } else if (repoType === 'custom') {
       const githubRepoPattern = /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/;
       if (!githubRepoPattern.test(customRepoUrl)) {
-        alert('カスタムリポジトリURLの形式が正しくありません。');
+        alert(dict.alertInvalidUrl);
         return;
       }
     }
 
-    chrome.storage.local.set({
-      repo_type: repoType,
-      custom_repo_url: customRepoUrl,
-      edition: edition
-    }, () => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({
+        language: currentLanguage,
+        repo_type: repoType,
+        custom_repo_url: customRepoUrl,
+        edition: edition
+      }, () => {
+        showToast();
+        setTimeout(() => {
+          window.close();
+        }, 1000);
+      });
+    } else {
       showToast();
       setTimeout(() => {
         window.close();
       }, 1000);
-    });
+    }
   });
 
   // キャンセルボタンイベント
@@ -144,6 +280,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function showToast() {
+    const dict = i18nDict[currentLanguage] || i18nDict.en;
+    toast.textContent = dict.toastSaved;
     toast.style.display = 'block';
     setTimeout(() => {
       toast.style.display = 'none';

@@ -67,7 +67,15 @@ function injectExportButton() {
   btn.style.backgroundColor = '#2da44e';
   btn.style.color = '#ffffff';
   btn.style.borderColor = 'rgba(27, 31, 36, 0.15)';
-  btn.textContent = 'かんたんMarkdownへエクスポート';
+  btn.textContent = 'Export to KanTanMarkdown';
+
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['language'], (settings) => {
+      if (settings && settings.language === 'ja') {
+        btn.textContent = 'かんたんMarkdownへエクスポート';
+      }
+    });
+  }
 
   btn.addEventListener('click', () => {
     handleExportClick(btn);
@@ -215,9 +223,11 @@ function getAttachmentsMetadata() {
   return [...metadataByUuid.values()].map(({ uuid, url, filename }) => ({ uuid, url, filename }));
 }
 
-function showEditionSelector(defaultEdition, onSelect, onCancel) {
+function showEditionSelector(defaultEdition, lang, onSelect, onCancel) {
   const existing = document.getElementById('ktm-modal-overlay');
   if (existing) existing.remove();
+
+  const isJa = (lang === 'ja');
 
   const overlay = document.createElement('div');
   overlay.id = 'ktm-modal-overlay';
@@ -244,13 +254,13 @@ function showEditionSelector(defaultEdition, onSelect, onCancel) {
   modal.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
 
   const title = document.createElement('h3');
-  title.textContent = 'エクスポートエディションの選択';
+  title.textContent = isJa ? 'エクスポートエディションの選択' : 'Select Export Edition';
   title.style.margin = '0 0 15px 0';
   title.style.fontSize = '16px';
   title.style.fontWeight = '600';
 
   const desc = document.createElement('p');
-  desc.textContent = '出力するHTMLのテンプレートエディションを選択してください。';
+  desc.textContent = isJa ? '出力するHTMLのテンプレートエディションを選択してください。' : 'Please select the template edition for the output HTML.';
   desc.style.margin = '0 0 15px 0';
   desc.style.fontSize = '12px';
   desc.style.color = 'var(--color-fg-muted, #57606a)';
@@ -289,7 +299,7 @@ function showEditionSelector(defaultEdition, onSelect, onCancel) {
   btnContainer.style.gap = '8px';
 
   const cancelBtn = document.createElement('button');
-  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.textContent = isJa ? 'キャンセル' : 'Cancel';
   cancelBtn.className = 'btn btn-sm';
   cancelBtn.style.padding = '5px 16px';
   cancelBtn.style.fontSize = '14px';
@@ -301,7 +311,7 @@ function showEditionSelector(defaultEdition, onSelect, onCancel) {
   cancelBtn.style.cursor = 'pointer';
 
   const exportBtn = document.createElement('button');
-  exportBtn.textContent = 'エクスポート';
+  exportBtn.textContent = isJa ? 'エクスポート' : 'Export';
   exportBtn.className = 'btn btn-sm btn-primary';
   exportBtn.style.padding = '5px 16px';
   exportBtn.style.fontSize = '14px';
@@ -357,10 +367,13 @@ function showEditionSelector(defaultEdition, onSelect, onCancel) {
 async function handleExportClick(btn) {
   const originalText = btn.textContent;
 
-  chrome.storage.local.get(['edition'], (settings) => {
+  chrome.storage.local.get(['language', 'edition'], (settings) => {
+    const lang = settings.language || 'en';
+    const isJa = (lang === 'ja');
     const defaultEdition = settings.edition || 'lite';
-    showEditionSelector(defaultEdition, async (selectedEdition) => {
-      btn.textContent = 'エクスポート中...';
+
+    showEditionSelector(defaultEdition, lang, async (selectedEdition) => {
+      btn.textContent = isJa ? 'エクスポート中...' : 'Exporting...';
       btn.disabled = true;
 
       try {
@@ -397,7 +410,7 @@ async function handleExportClick(btn) {
           btn.disabled = false;
 
           if (chrome.runtime.lastError) {
-            alert(`エラー: ${chrome.runtime.lastError.message}`);
+            alert(isJa ? `エラー: ${chrome.runtime.lastError.message}` : `Error: ${chrome.runtime.lastError.message}`);
             return;
           }
 
@@ -405,14 +418,14 @@ async function handleExportClick(btn) {
             const { templateHtml, markdown, attachments, outputFileName } = res.payload;
             downloadGeneratedFile(templateHtml, markdown, attachments, outputFileName);
           } else {
-            alert(`エクスポートに失敗しました: ${res ? res.error : '不明なエラー'}`);
+            alert(isJa ? `エクスポートに失敗しました: ${res ? res.error : '不明なエラー'}` : `Failed to export: ${res ? res.error : 'Unknown error'}`);
           }
         });
 
       } catch (err) {
         btn.textContent = originalText;
         btn.disabled = false;
-        alert(`エラーが発生しました: ${err.message}`);
+        alert(isJa ? `エラーが発生しました: ${err.message}` : `An error occurred: ${err.message}`);
       }
     }, () => {
       // キャンセル時のコールバック
