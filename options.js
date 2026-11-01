@@ -52,6 +52,67 @@ const i18nDict = {
 };
 
 
+/**
+ * GitHubのURL（リポジトリルート、tree/blobサブパス、サブディレクトリ指定等）を解析する。
+ * @param {string} inputUrl
+ * @returns {{ username: string, repo: string, subPath: string } | null}
+ */
+function parseGitHubRepoUrl(inputUrl) {
+  if (!inputUrl || typeof inputUrl !== 'string') return null;
+  const trimmed = inputUrl.trim().replace(/\/+$/, '');
+  const githubUrlPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:\/([^\s?#]*))?$/;
+  const match = trimmed.match(githubUrlPattern);
+  if (!match) return null;
+
+  const username = match[1];
+  const repo = match[2];
+  const rawRest = (match[3] || '').replace(/^\/+|\/+$/g, '');
+
+  let subPath = '';
+  if (rawRest) {
+    const treeBlobMatch = rawRest.match(/^(?:tree|blob)\/[^/]+(?:\/(.*))?$/);
+    if (treeBlobMatch) {
+      subPath = (treeBlobMatch[1] || '').replace(/^\/+|\/+$/g, '');
+    } else {
+      subPath = rawRest;
+    }
+    // 末尾に ktm-*.html 等のファイル名が直接指定されている場合は親ディレクトリパスを抽出
+    subPath = subPath.replace(/(?:^|\/)ktm-[a-zA-Z0-9_-]+\.html?$/i, '').replace(/^\/+|\/+$/g, '');
+  }
+
+  return { username, repo, subPath };
+}
+
+/**
+ * 解析済みGitHub URL情報とテンプレートファイル名から、探索候補となるGitHub Pages URLリストを生成する。
+ * @param {{ username: string, repo: string, subPath: string }} parsed
+ * @param {string} templateFile
+ * @returns {string[]}
+ */
+function buildTemplateCandidateUrls(parsed, templateFile) {
+  const pagesBase = `https://${parsed.username}.github.io/${parsed.repo}`;
+  const candidates = [];
+  const addCandidate = (url) => {
+    if (!candidates.includes(url)) {
+      candidates.push(url);
+    }
+  };
+
+  if (parsed.subPath) {
+    addCandidate(`${pagesBase}/${parsed.subPath}/${templateFile}`);
+    addCandidate(`${pagesBase}/${parsed.subPath}/dist/${templateFile}`);
+    if (!parsed.subPath.startsWith('dist/') && parsed.subPath !== 'dist') {
+      addCandidate(`${pagesBase}/dist/${parsed.subPath}/${templateFile}`);
+    }
+  }
+
+  addCandidate(`${pagesBase}/dist/${templateFile}`);
+  addCandidate(`${pagesBase}/${templateFile}`);
+  addCandidate(`${pagesBase}/dist/preview/${templateFile}`);
+
+  return candidates;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const languageRadios = document.querySelectorAll('input[name="language"]');
   const repoTypeRadios = document.querySelectorAll('input[name="repo_type"]');
@@ -168,10 +229,9 @@ document.addEventListener('DOMContentLoaded', () => {
     currentTestState = null;
 
     const dict = i18nDict[currentLanguage] || i18nDict.en;
-    const githubRepoPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)$/;
-    const match = url.match(githubRepoPattern);
+    const parsed = parseGitHubRepoUrl(url);
 
-    if (!match) {
+    if (!parsed) {
       currentTestState = 'testErrorInvalidUrl';
       testResult.textContent = dict.testErrorInvalidUrl;
       testResult.className = 'error';
@@ -182,9 +242,6 @@ document.addEventListener('DOMContentLoaded', () => {
     testResult.textContent = dict.testTesting;
     testResult.className = '';
 
-    const username = match[1];
-    const repo = match[2];
-
     const selectedEdition = document.querySelector('input[name="edition"]:checked')?.value || 'lite';
     const editionTemplates = {
       lite: 'ktm-lite.html',
@@ -192,27 +249,37 @@ document.addEventListener('DOMContentLoaded', () => {
       full: 'ktm-full.html'
     };
     const templateFile = editionTemplates[selectedEdition] || 'ktm-lite.html';
-    const targetUrl = `https://${username}.github.io/${repo}/dist/${templateFile}`;
+    const candidateUrls = buildTemplateCandidateUrls(parsed, templateFile);
+    const targetUrl = candidateUrls[0];
 
-    const executeFetch = () => {
+    const executeFetch = async () => {
       const fetchDict = i18nDict[currentLanguage] || i18nDict.en;
-      fetch(targetUrl, { method: 'HEAD' })
-        .then((response) => {
-          if (response.ok) {
+      let hadNetworkError = false;
+
+      for (const candidateUrl of candidateUrls) {
+        try {
+          const response = await fetch(candidateUrl, { method: 'HEAD' });
+          if (response && response.ok) {
             currentTestState = 'testSuccess';
             testResult.textContent = fetchDict.testSuccess;
             testResult.className = 'success';
-          } else {
-            currentTestState = 'testErrorTemplateNotFound';
-            testResult.textContent = fetchDict.testErrorTemplateNotFound;
-            testResult.className = 'error';
+            return;
           }
-        })
-        .catch(() => {
-          currentTestState = 'testErrorNetwork';
-          testResult.textContent = fetchDict.testErrorNetwork;
-          testResult.className = 'error';
-        });
+          hadNetworkError = false;
+        } catch {
+          hadNetworkError = true;
+        }
+      }
+
+      if (hadNetworkError) {
+        currentTestState = 'testErrorNetwork';
+        testResult.textContent = fetchDict.testErrorNetwork;
+        testResult.className = 'error';
+      } else {
+        currentTestState = 'testErrorTemplateNotFound';
+        testResult.textContent = fetchDict.testErrorTemplateNotFound;
+        testResult.className = 'error';
+      }
     };
 
     if (typeof chrome !== 'undefined' && chrome.permissions && chrome.permissions.contains) {
@@ -247,8 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (repoType === 'fork') {
       customRepoUrl = 'https://github.com/hiro-gj/KanTanMarkdown';
     } else if (repoType === 'custom') {
-      const githubRepoPattern = /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/;
-      if (!githubRepoPattern.test(customRepoUrl)) {
+      if (!parseGitHubRepoUrl(customRepoUrl)) {
         alert(dict.alertInvalidUrl);
         return;
       }

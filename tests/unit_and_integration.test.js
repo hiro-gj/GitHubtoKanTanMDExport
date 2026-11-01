@@ -85,6 +85,123 @@ test('3. background.js の初期値フォールバックおよびURL解決ロジ
   assert.ok(bgContent.includes("settings.repo_type : 'fork'"), '未設定時のフォールバック repo_type が fork であること');
   assert.ok(bgContent.includes("'https://github.com/hiro-gj/KanTanMarkdown'"), '未設定時のフォールバックURLが hiro-gj であること');
   assert.ok(bgContent.includes("templateBaseUrl = 'https://hiro-gj.github.io/KanTanMarkdown'"), 'デフォルト templateBaseUrl が hiro-gj であること');
+
+  // parseGitHubRepoUrl と buildTemplateCandidateUrls の動作検証
+  const parseMatch = bgContent.match(/function parseGitHubRepoUrl[\s\S]*?function buildTemplateCandidateUrls[\s\S]*?\n}/);
+  assert.ok(parseMatch, 'URL解析・候補生成関数が定義されていること');
+  const { parseGitHubRepoUrl, buildTemplateCandidateUrls } = new Function(`${parseMatch[0]}; return { parseGitHubRepoUrl, buildTemplateCandidateUrls };`)();
+
+  // (a) 標準リポジトリURL
+  const rootParsed = parseGitHubRepoUrl('https://github.com/hiro-gj/KanTanMarkdown');
+  assert.deepStrictEqual(rootParsed, { username: 'hiro-gj', repo: 'KanTanMarkdown', subPath: '' });
+  const rootCandidates = buildTemplateCandidateUrls(rootParsed, 'ktm-lite.html');
+  assert.strictEqual(rootCandidates[0], 'https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html');
+
+  // (b) /tree/master/dist/preview 指定URL
+  const previewParsed = parseGitHubRepoUrl('https://github.com/hiro-gj/KanTanMarkdown/tree/master/dist/preview');
+  assert.deepStrictEqual(previewParsed, { username: 'hiro-gj', repo: 'KanTanMarkdown', subPath: 'dist/preview' });
+  const previewCandidates = buildTemplateCandidateUrls(previewParsed, 'ktm-lite.html');
+  assert.strictEqual(previewCandidates[0], 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html');
+  assert.ok(previewCandidates.includes('https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html'));
+
+  // (c) /blob/master/dist/preview/ktm-std.html 直接ファイル指定URL
+  const blobParsed = parseGitHubRepoUrl('https://github.com/hiro-gj/KanTanMarkdown/blob/master/dist/preview/ktm-std.html');
+  assert.deepStrictEqual(blobParsed, { username: 'hiro-gj', repo: 'KanTanMarkdown', subPath: 'dist/preview' });
+  const blobCandidates = buildTemplateCandidateUrls(blobParsed, 'ktm-full.html');
+  assert.strictEqual(blobCandidates[0], 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-full.html');
+
+  // (d) GitHub以外の不正URLは null を返すこと
+  assert.strictEqual(parseGitHubRepoUrl('https://example.com/hiro-gj/KanTanMarkdown'), null);
+  assert.strictEqual(parseGitHubRepoUrl('http://github.com/hiro-gj/KanTanMarkdown'), null);
+});
+
+test('5. background.js handleExport における柔軟なテンプレート探索の結合検証', async (t) => {
+  const bgContent = fs.readFileSync(path.join(repoRoot, 'background.js'), 'utf-8');
+  let messageListener = null;
+  let mockSettings = {};
+  const requestedUrls = [];
+
+  const mockChrome = {
+    runtime: {
+      onMessage: {
+        addListener(fn) {
+          messageListener = fn;
+        }
+      }
+    },
+    storage: {
+      local: {
+        async get() {
+          return mockSettings;
+        }
+      }
+    }
+  };
+
+  const mockFetch = async (url) => {
+    requestedUrls.push(url);
+    if (url === 'https://raw.githubusercontent.com/hiro-gj/test/main/README.md') {
+      return { ok: true, text: async () => '# Test Title\nHello' };
+    }
+    if (url === 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html') {
+      return { ok: true, text: async () => '<html><body><textarea id="editor"></textarea><ul id="fileList"></ul></body></html>' };
+    }
+    return { ok: false, status: 404 };
+  };
+
+  const runner = new Function('chrome', 'fetch', bgContent);
+  runner(mockChrome, mockFetch);
+  assert.ok(messageListener, 'onMessage リスナーが登録されていること');
+
+  // ケース1: tree/master/dist/preview 指定時に dist/preview/ktm-lite.html を直接取得できること
+  mockSettings = {
+    repo_type: 'custom',
+    custom_repo_url: 'https://github.com/hiro-gj/KanTanMarkdown/tree/master/dist/preview',
+    edition: 'lite'
+  };
+  requestedUrls.length = 0;
+
+  const res1 = await new Promise((resolve) => {
+    messageListener({
+      action: 'exportMarkdown',
+      payload: {
+        markdownFetchUrl: 'https://raw.githubusercontent.com/hiro-gj/test/main/README.md',
+        repoInfo: { owner: 'hiro-gj', repo: 'test', branch: 'main' },
+        fileName: 'README.md',
+        rawUrl: 'https://raw.githubusercontent.com/hiro-gj/test/main/README.md',
+        attachmentsMetadata: [],
+        edition: 'lite'
+      }
+    }, {}, resolve);
+  });
+
+  assert.strictEqual(res1.success, true, 'dist/preview URLでエクスポートが成功すること');
+  assert.strictEqual(requestedUrls[1], 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html');
+
+  // ケース2: リポジトリの別パスが入力されても候補探索で dist/preview/ktm-lite.html を見つけて成功すること
+  mockSettings = {
+    repo_type: 'custom',
+    custom_repo_url: 'https://github.com/hiro-gj/KanTanMarkdown/tree/master',
+    edition: 'lite'
+  };
+  requestedUrls.length = 0;
+
+  const res2 = await new Promise((resolve) => {
+    messageListener({
+      action: 'exportMarkdown',
+      payload: {
+        markdownFetchUrl: 'https://raw.githubusercontent.com/hiro-gj/test/main/README.md',
+        repoInfo: { owner: 'hiro-gj', repo: 'test', branch: 'main' },
+        fileName: 'README.md',
+        rawUrl: 'https://raw.githubusercontent.com/hiro-gj/test/main/README.md',
+        attachmentsMetadata: [],
+        edition: 'lite'
+      }
+    }, {}, resolve);
+  });
+
+  assert.strictEqual(res2.success, true, '候補URLを順次探索して存在する ktm-lite.html を見つけられること');
+  assert.ok(requestedUrls.includes('https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html'));
 });
 
 test('4. content.js の多言語連動ロジック検証', (t) => {

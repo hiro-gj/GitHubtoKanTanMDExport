@@ -38,6 +38,7 @@ GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 4. **選べるエディションとカスタムリポジトリ設定**:
    - 設定（オプション）画面から、かんたんMarkdownのエディション（Lite/Standard/Full）を切り替え可能。
    - <s>オリジナルの配信元リポジトリ（tatesuke）に加え、</s>独自にフォーク・カスタマイズされたカスタムリポジトリを指定可能。さらに、そのリポジトリが正しくホスティングされているか疎通確認テスト（接続テスト）を行えます。
+   - カスタムリポジトリURLには、リポジトリのトップURL（例：`https://github.com/hiro-gj/KanTanMarkdown`）だけでなく、ブランチやサブディレクトリを含むGitHubのURL（例：`https://github.com/hiro-gj/KanTanMarkdown/tree/master/dist/preview`）も柔軟に指定可能です。入力されたGitHub URLから公開先のテンプレートファイル（`ktm-*.html`）を自動探索し、存在すればそのまま利用できます。
 5. **自己完結型パッケージ生成機能**:
    - テンプレートHTML、置換後のMarkdown本文、およびBase64化した添付画像データを1ファイルに統合し、`[リポジトリ名]_[元ファイル名].html` のファイル名で自動ダウンロードします。ダウンロードしたHTMLをダブルクリックするだけで、スライドが即座に表示されます。
 

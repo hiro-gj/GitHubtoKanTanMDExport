@@ -11,6 +11,67 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+/**
+ * GitHubのURL（リポジトリルート、tree/blobサブパス、サブディレクトリ指定等）を解析する。
+ * @param {string} inputUrl
+ * @returns {{ username: string, repo: string, subPath: string } | null}
+ */
+function parseGitHubRepoUrl(inputUrl) {
+  if (!inputUrl || typeof inputUrl !== 'string') return null;
+  const trimmed = inputUrl.trim().replace(/\/+$/, '');
+  const githubUrlPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:\/([^\s?#]*))?$/;
+  const match = trimmed.match(githubUrlPattern);
+  if (!match) return null;
+
+  const username = match[1];
+  const repo = match[2];
+  const rawRest = (match[3] || '').replace(/^\/+|\/+$/g, '');
+
+  let subPath = '';
+  if (rawRest) {
+    const treeBlobMatch = rawRest.match(/^(?:tree|blob)\/[^/]+(?:\/(.*))?$/);
+    if (treeBlobMatch) {
+      subPath = (treeBlobMatch[1] || '').replace(/^\/+|\/+$/g, '');
+    } else {
+      subPath = rawRest;
+    }
+    // 末尾に ktm-*.html 等のファイル名が直接指定されている場合は親ディレクトリパスを抽出
+    subPath = subPath.replace(/(?:^|\/)ktm-[a-zA-Z0-9_-]+\.html?$/i, '').replace(/^\/+|\/+$/g, '');
+  }
+
+  return { username, repo, subPath };
+}
+
+/**
+ * 解析済みGitHub URL情報とテンプレートファイル名から、探索候補となるGitHub Pages URLリストを生成する。
+ * @param {{ username: string, repo: string, subPath: string }} parsed
+ * @param {string} templateFile
+ * @returns {string[]}
+ */
+function buildTemplateCandidateUrls(parsed, templateFile) {
+  const pagesBase = `https://${parsed.username}.github.io/${parsed.repo}`;
+  const candidates = [];
+  const addCandidate = (url) => {
+    if (!candidates.includes(url)) {
+      candidates.push(url);
+    }
+  };
+
+  if (parsed.subPath) {
+    addCandidate(`${pagesBase}/${parsed.subPath}/${templateFile}`);
+    addCandidate(`${pagesBase}/${parsed.subPath}/dist/${templateFile}`);
+    if (!parsed.subPath.startsWith('dist/') && parsed.subPath !== 'dist') {
+      addCandidate(`${pagesBase}/dist/${parsed.subPath}/${templateFile}`);
+    }
+  }
+
+  addCandidate(`${pagesBase}/dist/${templateFile}`);
+  addCandidate(`${pagesBase}/${templateFile}`);
+  addCandidate(`${pagesBase}/dist/preview/${templateFile}`);
+
+  return candidates;
+}
+
 async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, attachmentsMetadata, edition: payloadEdition }) {
   // 1. 設定情報を取得
   const settings = await chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition']);
@@ -33,34 +94,42 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
 
   // 2. テンプレートHTMLのURLを決定
   let templateBaseUrl = 'https://hiro-gj.github.io/KanTanMarkdown';
-  if (repoType === 'custom' && customRepoUrl) {
-    const githubRepoPattern = /^https:\/\/github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_-]+)$/;
-    const match = customRepoUrl.match(githubRepoPattern);
-    if (match) {
-      const username = match[1];
-      const repo = match[2];
-      templateBaseUrl = `https://${username}.github.io/${repo}`;
-    }
-  } else if (repoType === 'fork') {
-    templateBaseUrl = 'https://hiro-gj.github.io/KanTanMarkdown';
-  }
-
   const editionTemplates = {
     lite: 'ktm-lite.html',
     standard: 'ktm-std.html',
     full: 'ktm-full.html'
   };
   const templateFile = editionTemplates[edition] || 'ktm-lite.html';
-  const templateHtmlUrl = `${templateBaseUrl}/dist/${templateFile}`;
+  let candidateUrls = [`${templateBaseUrl}/dist/${templateFile}`];
 
-  // 3. テンプレートHTMLをフェッチ
-  let templateHtml;
-  try {
-    const res = await fetch(templateHtmlUrl);
-    if (!res.ok) throw new Error('テンプレートの取得に失敗しました。');
-    templateHtml = await res.text();
-  } catch (err) {
-    throw new Error(`テンプレート読み込み失敗: ${err.message}`);
+  if (repoType === 'custom' && customRepoUrl) {
+    const parsed = parseGitHubRepoUrl(customRepoUrl);
+    if (parsed) {
+      templateBaseUrl = `https://${parsed.username}.github.io/${parsed.repo}`;
+      candidateUrls = buildTemplateCandidateUrls(parsed, templateFile);
+    }
+  } else if (repoType === 'fork') {
+    templateBaseUrl = 'https://hiro-gj.github.io/KanTanMarkdown';
+    candidateUrls = [`${templateBaseUrl}/dist/${templateFile}`];
+  }
+
+  // 3. テンプレートHTMLをフェッチ（候補URLから ktm-*.html を順に探索）
+  let templateHtml = null;
+  let lastError = null;
+  for (const templateHtmlUrl of candidateUrls) {
+    try {
+      const res = await fetch(templateHtmlUrl);
+      if (res.ok) {
+        templateHtml = await res.text();
+        break;
+      }
+      lastError = new Error('テンプレートの取得に失敗しました。');
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  if (templateHtml === null) {
+    throw new Error(`テンプレート読み込み失敗: ${(lastError || new Error('テンプレートの取得に失敗しました。')).message}`);
   }
 
   // 4. 画像URLを抽出してフェッチ＆Base64エンコード
