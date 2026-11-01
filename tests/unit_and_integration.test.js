@@ -86,10 +86,12 @@ test('3. background.js の初期値フォールバックおよびURL解決ロジ
   assert.ok(bgContent.includes("'https://github.com/hiro-gj/KanTanMarkdown'"), '未設定時のフォールバックURLが hiro-gj であること');
   assert.ok(bgContent.includes("templateBaseUrl = 'https://hiro-gj.github.io/KanTanMarkdown'"), 'デフォルト templateBaseUrl が hiro-gj であること');
 
-  // parseGitHubRepoUrl と buildTemplateCandidateUrls の動作検証
-  const parseMatch = bgContent.match(/function parseGitHubRepoUrl[\s\S]*?function buildTemplateCandidateUrls[\s\S]*?\n}/);
-  assert.ok(parseMatch, 'URL解析・候補生成関数が定義されていること');
-  const { parseGitHubRepoUrl, buildTemplateCandidateUrls } = new Function(`${parseMatch[0]}; return { parseGitHubRepoUrl, buildTemplateCandidateUrls };`)();
+  // parseGitHubRepoUrl, buildTemplateCandidateUrls, appendCacheBuster の動作検証
+  const parseMatch = bgContent.match(/function parseGitHubRepoUrl[\s\S]*?function appendCacheBuster[\s\S]*?\n}/);
+  assert.ok(parseMatch, 'URL解析・候補生成・キャッシュバスター関数が定義されていること');
+  const { parseGitHubRepoUrl, buildTemplateCandidateUrls, appendCacheBuster } = new Function(
+    `${parseMatch[0]}; return { parseGitHubRepoUrl, buildTemplateCandidateUrls, appendCacheBuster };`
+  )();
 
   // (a) 標準リポジトリURL
   const rootParsed = parseGitHubRepoUrl('https://github.com/hiro-gj/KanTanMarkdown');
@@ -113,13 +115,49 @@ test('3. background.js の初期値フォールバックおよびURL解決ロジ
   // (d) GitHub以外の不正URLは null を返すこと
   assert.strictEqual(parseGitHubRepoUrl('https://example.com/hiro-gj/KanTanMarkdown'), null);
   assert.strictEqual(parseGitHubRepoUrl('http://github.com/hiro-gj/KanTanMarkdown'), null);
+
+  // (e) appendCacheBuster の動作検証（?t= 付与および &t= 付与）
+  assert.strictEqual(
+    appendCacheBuster('https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html', 1700000000000),
+    'https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html?t=1700000000000'
+  );
+  assert.strictEqual(
+    appendCacheBuster('https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html?foo=1', 1700000000000),
+    'https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html?foo=1&t=1700000000000'
+  );
+  const autoBusted = appendCacheBuster('https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-std.html');
+  assert.match(autoBusted, /^https:\/\/hiro-gj\.github\.io\/KanTanMarkdown\/dist\/ktm-std\.html\?t=\d+$/);
 });
 
-test('5. background.js handleExport における柔軟なテンプレート探索の結合検証', async (t) => {
+test('5. background.js handleExport における柔軟なテンプレート探索およびキャッシュクリア・キャッシュバスターの結合検証', async (t) => {
   const bgContent = fs.readFileSync(path.join(repoRoot, 'background.js'), 'utf-8');
   let messageListener = null;
   let mockSettings = {};
-  const requestedUrls = [];
+  const requestedCalls = [];
+  const deletedCacheEntries = [];
+  let templateVersion = 'v1';
+
+  const mockCaches = {
+    async keys() {
+      return ['ktm-cache-v1'];
+    },
+    async open(cacheName) {
+      return {
+        async delete(reqOrUrl, options) {
+          const target = typeof reqOrUrl === 'string' ? reqOrUrl : reqOrUrl.url;
+          deletedCacheEntries.push({ cacheName, target, options });
+          return true;
+        },
+        async keys() {
+          return [
+            { url: 'https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html?t=1000' },
+            { url: 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-std.html' },
+            { url: 'https://hiro-gj.github.io/KanTanMarkdown/assets/other.js' }
+          ];
+        }
+      };
+    }
+  };
 
   const mockChrome = {
     runtime: {
@@ -138,28 +176,37 @@ test('5. background.js handleExport における柔軟なテンプレート探�
     }
   };
 
-  const mockFetch = async (url) => {
-    requestedUrls.push(url);
+  const mockFetch = async (url, options) => {
+    requestedCalls.push({ url, options });
+    const baseUrl = url.split('?')[0];
     if (url === 'https://raw.githubusercontent.com/hiro-gj/test/main/README.md') {
       return { ok: true, text: async () => '# Test Title\nHello' };
     }
-    if (url === 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html') {
-      return { ok: true, text: async () => '<html><body><textarea id="editor"></textarea><ul id="fileList"></ul></body></html>' };
+    if (baseUrl === 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html') {
+      return { ok: true, text: async () => `<html><body data-edition="lite" data-ver="${templateVersion}"><textarea id="editor"></textarea><ul id="fileList"></ul></body></html>` };
+    }
+    if (baseUrl === 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-std.html') {
+      return { ok: true, text: async () => `<html><body data-edition="standard" data-ver="${templateVersion}"><textarea id="editor"></textarea><ul id="fileList"></ul></body></html>` };
+    }
+    if (baseUrl === 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-full.html') {
+      return { ok: true, text: async () => `<html><body data-edition="full" data-ver="${templateVersion}"><textarea id="editor"></textarea><ul id="fileList"></ul></body></html>` };
     }
     return { ok: false, status: 404 };
   };
 
-  const runner = new Function('chrome', 'fetch', bgContent);
-  runner(mockChrome, mockFetch);
+  const runner = new Function('chrome', 'fetch', 'caches', bgContent);
+  runner(mockChrome, mockFetch, mockCaches);
   assert.ok(messageListener, 'onMessage リスナーが登録されていること');
 
-  // ケース1: tree/master/dist/preview 指定時に dist/preview/ktm-lite.html を直接取得できること
+  // ケース1: tree/master/dist/preview 指定時にキャッシュクリア・?t=付与・cache: 'no-store' で dist/preview/ktm-lite.html を取得できること
   mockSettings = {
     repo_type: 'custom',
     custom_repo_url: 'https://github.com/hiro-gj/KanTanMarkdown/tree/master/dist/preview',
     edition: 'lite'
   };
-  requestedUrls.length = 0;
+  requestedCalls.length = 0;
+  deletedCacheEntries.length = 0;
+  templateVersion = 'v1';
 
   const res1 = await new Promise((resolve) => {
     messageListener({
@@ -176,15 +223,39 @@ test('5. background.js handleExport における柔軟なテンプレート探�
   });
 
   assert.strictEqual(res1.success, true, 'dist/preview URLでエクスポートが成功すること');
-  assert.strictEqual(requestedUrls[1], 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html');
+  assert.ok(deletedCacheEntries.length > 0, 'ktm-*.html 取得前に Cache Storage の削除処理が呼ばれていること');
+  assert.ok(
+    deletedCacheEntries.some(e => e.target === 'https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html' && e.options && e.options.ignoreSearch === true),
+    '候補URLに対して ignoreSearch: true でキャッシュ削除が実行されること'
+  );
+  assert.ok(
+    deletedCacheEntries.some(e => e.target === 'https://hiro-gj.github.io/KanTanMarkdown/dist/ktm-lite.html?t=1000'),
+    '既存の ktm-*.html キャッシュエントリが削除対象になること'
+  );
+  assert.ok(
+    !deletedCacheEntries.some(e => e.target === 'https://hiro-gj.github.io/KanTanMarkdown/assets/other.js'),
+    'ktm-*.html 以外の無関係なエントリは削除しないこと'
+  );
+  assert.match(
+    requestedCalls[1].url,
+    /^https:\/\/hiro-gj\.github\.io\/KanTanMarkdown\/dist\/preview\/ktm-lite\.html\?t=\d+$/,
+    'テンプレート取得URLに ?t=<timestamp> が付与されていること'
+  );
+  assert.deepStrictEqual(
+    requestedCalls[1].options,
+    { cache: 'no-store' },
+    'テンプレート取得時に { cache: "no-store" } が指定されていること'
+  );
+  assert.ok(res1.payload.templateHtml.includes('data-edition="lite" data-ver="v1"'));
 
-  // ケース2: リポジトリの別パスが入力されても候補探索で dist/preview/ktm-lite.html を見つけて成功すること
+  // ケース2: テンプレート更新後およびエディション変更時（standard / full）に古いキャッシュが使われず最新版が取得されること
   mockSettings = {
     repo_type: 'custom',
     custom_repo_url: 'https://github.com/hiro-gj/KanTanMarkdown/tree/master',
     edition: 'lite'
   };
-  requestedUrls.length = 0;
+  requestedCalls.length = 0;
+  templateVersion = 'v2-updated';
 
   const res2 = await new Promise((resolve) => {
     messageListener({
@@ -195,13 +266,25 @@ test('5. background.js handleExport における柔軟なテンプレート探�
         fileName: 'README.md',
         rawUrl: 'https://raw.githubusercontent.com/hiro-gj/test/main/README.md',
         attachmentsMetadata: [],
-        edition: 'lite'
+        edition: 'standard'
       }
     }, {}, resolve);
   });
 
-  assert.strictEqual(res2.success, true, '候補URLを順次探索して存在する ktm-lite.html を見つけられること');
-  assert.ok(requestedUrls.includes('https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-lite.html'));
+  assert.strictEqual(res2.success, true, '候補URLを順次探索して存在する ktm-std.html を見つけられること');
+  const templateCalls = requestedCalls.slice(1);
+  assert.ok(
+    templateCalls.every(c => /\?t=\d+$/.test(c.url) && c.options && c.options.cache === 'no-store'),
+    'すべてのテンプレート候補リクエストに ?t= と cache: "no-store" が適用されていること'
+  );
+  assert.ok(
+    templateCalls.some(c => c.url.startsWith('https://hiro-gj.github.io/KanTanMarkdown/dist/preview/ktm-std.html?t=')),
+    '指定エディション(standard)の候補URLへ ?t= 付きでアクセスしていること'
+  );
+  assert.ok(
+    res2.payload.templateHtml.includes('data-edition="standard" data-ver="v2-updated"'),
+    '更新後の最新テンプレートかつ指定エディションが取得されていること'
+  );
 });
 
 test('4. content.js の多言語連動ロジック検証', (t) => {

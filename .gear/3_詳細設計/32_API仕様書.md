@@ -49,12 +49,13 @@ errorは人向け文字列であり固定のエラーコードなし。FETCH_MD_
 | 目的 | メソッド | URL | 成功時 | 非成功時 |
 | --- | --- | --- | --- | --- |
 | Raw本文 | GET | markdownFetchUrl（DOM Rawリンク優先） | response.text() | 全体失敗 |
-| テンプレート | GET | {base}/dist/{editionFile} | response.text() | 全体失敗 |
+| テンプレート | GET | {candidateUrl}?t={timestamp}（`cache: 'no-store'`） | response.text() | 全体失敗 |
 | 画像 | GET | 絶対src、またはnew URL(src, rawUrl) | blobからData URL | warn、置換省略 |
 | DOM添付 | GET | attachmentsMetadata[].url | blobからData URL | warn、置換省略 |
 
-base: フォーク https://hiro-gj.github.io/KanTanMarkdown、形式一致するcustomは https://{owner}.github.io/{repo}。
+base: フォーク https://hiro-gj.github.io/KanTanMarkdown、形式一致するcustomは https://{owner}.github.io/{repo}（サブパス指定時は buildTemplateCandidateUrls による候補URLリスト）。
 editionFile: lite=ktm-lite.html、standard=ktm-std.html、full=ktm-full.html、未知値=ktm-lite.html。
+テンプレート取得時は事前に Cache Storage (`caches`) 内の `ktm-*.html` キャッシュをクリアし、URLにキャッシュバスター `?t=<timestamp>` を付与した上で `fetch(url, { cache: 'no-store' })` を実行する。
 独自Authorization/リクエストbody/credentials/AbortController指定なし。認証が必要な資源の取得はブラウザ状態・配信URL・権限による。HTTP ok以外は失敗。テンプレートのContent-Type・editor/fileList構造を検証しない。
 
 ## API-003: 設定ストレージ（FR-003）

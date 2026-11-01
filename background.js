@@ -72,6 +72,57 @@ function buildTemplateCandidateUrls(parsed, templateFile) {
   return candidates;
 }
 
+/**
+ * テンプレート取得URLにキャッシュバスター（?t=...）を付与する。
+ * @param {string} url
+ * @param {number|string} [timestamp]
+ * @returns {string}
+ */
+function appendCacheBuster(url, timestamp = Date.now()) {
+  if (!url || typeof url !== 'string') return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}t=${timestamp}`;
+}
+
+/**
+ * ktm-*.html 取得前に Cache Storage 内のテンプレートキャッシュをクリアする。
+ * @param {string[]} candidateUrls
+ */
+async function clearTemplateCache(candidateUrls = []) {
+  if (typeof caches === 'undefined' || !caches || typeof caches.keys !== 'function') {
+    return;
+  }
+  try {
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames.map(async (cacheName) => {
+        const cache = await caches.open(cacheName);
+        if (!cache) return;
+
+        if (typeof cache.delete === 'function') {
+          await Promise.all(
+            candidateUrls.map((url) => cache.delete(url, { ignoreSearch: true }).catch(() => false))
+          );
+        }
+
+        if (typeof cache.keys === 'function' && typeof cache.delete === 'function') {
+          const requests = await cache.keys();
+          await Promise.all(
+            requests
+              .filter((req) => {
+                const reqUrl = typeof req === 'string' ? req : (req && req.url ? req.url : '');
+                return /ktm-[a-zA-Z0-9_-]+\.html?(?:[?#]|$)/i.test(reqUrl);
+              })
+              .map((req) => cache.delete(req).catch(() => false))
+          );
+        }
+      })
+    );
+  } catch (err) {
+    console.warn('テンプレートキャッシュのクリア中に警告が発生しました:', err);
+  }
+}
+
 async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, attachmentsMetadata, edition: payloadEdition }) {
   // 1. 設定情報を取得
   const settings = await chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition']);
@@ -113,12 +164,15 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
     candidateUrls = [`${templateBaseUrl}/dist/${templateFile}`];
   }
 
-  // 3. テンプレートHTMLをフェッチ（候補URLから ktm-*.html を順に探索）
+  // 3. テンプレートHTML取得前にキャッシュをクリアし、キャッシュバスター(?t=)を併用してフェッチ
+  await clearTemplateCache(candidateUrls);
+  const cacheBuster = Date.now();
   let templateHtml = null;
   let lastError = null;
   for (const templateHtmlUrl of candidateUrls) {
     try {
-      const res = await fetch(templateHtmlUrl);
+      const fetchUrl = appendCacheBuster(templateHtmlUrl, cacheBuster);
+      const res = await fetch(fetchUrl, { cache: 'no-store' });
       if (res.ok) {
         templateHtml = await res.text();
         break;
