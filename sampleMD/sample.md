@@ -453,3 +453,16 @@ stateDiagram-v2
     エラー --> 停止中 : リセット
 ```
 
+### ガントチャート
+
+```mermaid
+gantt
+    title プロジェクト計画
+    dateFormat  YYYY-MM-DD
+    section 設計
+    要件定義           :a1, 2025-01-01, 7d
+    基本設計           :a2, after a1, 5d
+    section 開発
+    実装               :b1, after a2, 14d
+    テスト             :b2, after b1, 7d
+```
