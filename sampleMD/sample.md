@@ -402,3 +402,54 @@ cond(no)->sub1(right)->op1
 
 
 flowchart.jsの記法は[公式ページ](https://adrai.github.io/flowchart.js/)をご覧ください。
+
+
+
+## Mermaid（Fullエディションのみ）
+
+### フローチャート
+
+```mermaid
+flowchart TD
+    A[開始] --> B{条件判定}
+    B -->|Yes| C[OK]
+    B -->|No| D[NG]
+    C --> E[終了]
+    D --> E
+```
+
+### シーケンス図
+
+```mermaid
+sequenceDiagram
+    アリス->>ボブ: こんにちは
+    ボブ->>アリス: やあ
+```
+
+### クラス図
+
+```mermaid
+classDiagram
+    Animal <|-- Duck
+    Animal <|-- Fish
+    Animal : +int age
+    Animal : +String gender
+    Animal: +isMammal()
+    Duck: +String beakColor
+    Duck: +swim()
+    Fish: +int sizeInFeet
+    Fish: +canEat()
+```
+
+### 状態遷移図
+
+```mermaid
+stateDiagram-v2
+    [*] --> 停止中
+    停止中 --> 起動中 : 電源ON
+    起動中 --> 稼働中
+    稼働中 --> 停止中 : 電源OFF
+    稼働中 --> エラー : 異常発生
+    エラー --> 停止中 : リセット
+```
+
