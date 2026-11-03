@@ -62,7 +62,10 @@ GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 
 ## 1. 導入手順（インストール方法）
 
-### 1.1. 開発者モードからの読み込み（ローカル環境）
+### Plan A. Chrome ウェブストア で有効化
+- [GitHub to KanTanMarkdown Export](https://chromewebstore.google.com/detail/github-to-kantanmarkdown/deeffccghbhkkldhpncadbnchnhdhnil)
+
+### Plan B. 開発者モードからの読み込み（ローカル環境）
 1. 本リポジトリのソースコードを任意のフォルダにクローンまたはダウンロード（ZIP）して解凍します。
 2. Google Chromeブラウザを開き、アドレスバーに `chrome://extensions/` を入力して開きます。
 3. 画面右上にある **「デベロッパー モード」** のトグルスイッチをONにします。
