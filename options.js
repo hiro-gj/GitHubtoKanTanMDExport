@@ -4,7 +4,7 @@ const i18nDict = {
     officialRepoLink: 'KanTanMarkdown Original Repository (Archived) here',
     labelLanguage: 'Language',
     labelRepoType: 'KanTanMarkdown Repository Selection',
-    repoOriginal: 'Original (tatesuke) (Unavailable)',
+    repoOriginal: 'Original (tatesuke)',
     repoFork: 'Fork (hiro-gj)',
     repoCustom: 'Other (Custom Repository URL)',
     customRepoUrlPlaceholder: 'https://github.com/username/repository',
@@ -29,7 +29,7 @@ const i18nDict = {
     officialRepoLink: 'かんたんMarkdown オリジナルリポジトリ（アーカイブ）はこちら',
     labelLanguage: '言語選択',
     labelRepoType: 'かんたんMarkdownリポジトリ選択',
-    repoOriginal: 'オリジナル(tatesuke) (利用不可)',
+    repoOriginal: 'オリジナル(tatesuke)',
     repoFork: 'フォーク(hiro-gj)',
     repoCustom: 'その他（カスタムリポジトリURL入力）',
     customRepoUrlPlaceholder: 'https://github.com/ユーザー名/リポジトリ名',
@@ -159,16 +159,18 @@ document.addEventListener('DOMContentLoaded', () => {
         targetLangRadio.checked = true;
       }
 
-      // オリジナルは動作不能なため、fork を初期選択の基本とする
-      const repoType = (data.repo_type && data.repo_type !== 'original') ? data.repo_type : 'fork';
+      // 保存された repo_type を取得（未設定時は fork）
+      const repoType = data.repo_type || 'fork';
       const targetRepoRadio = document.querySelector(`input[name="repo_type"][value="${repoType}"]`);
       if (targetRepoRadio) {
         targetRepoRadio.checked = true;
       }
       toggleCustomRepoInput(repoType);
 
-      if (repoType === 'custom' && data.custom_repo_url) {
+      if (data.custom_repo_url) {
         customRepoUrlInput.value = data.custom_repo_url;
+      } else if (repoType === 'original') {
+        customRepoUrlInput.value = 'https://github.com/tatesuke/KanTanMarkdown';
       } else {
         customRepoUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown';
       }
@@ -201,16 +203,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function toggleCustomRepoInput(value) {
+    customRepoUrlInput.disabled = false;
+    testBtn.disabled = false;
     if (value === 'custom') {
-      customRepoUrlInput.disabled = false;
-      testBtn.disabled = false;
       if (!customRepoUrlInput.value) {
         customRepoUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown';
       }
     } else if (value === 'fork') {
-      customRepoUrlInput.disabled = true;
-      testBtn.disabled = false;
       customRepoUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown';
+    } else if (value === 'original') {
+      customRepoUrlInput.value = 'https://github.com/tatesuke/KanTanMarkdown';
     } else {
       customRepoUrlInput.disabled = true;
       testBtn.disabled = true;
@@ -311,13 +313,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let customRepoUrl = customRepoUrlInput.value.trim();
     const edition = document.querySelector('input[name="edition"]:checked')?.value || 'lite';
 
-    if (repoType === 'fork') {
+    if (repoType === 'fork' && !customRepoUrl) {
       customRepoUrl = 'https://github.com/hiro-gj/KanTanMarkdown';
-    } else if (repoType === 'custom') {
-      if (!parseGitHubRepoUrl(customRepoUrl)) {
-        alert(dict.alertInvalidUrl);
-        return;
-      }
+    } else if (repoType === 'original' && !customRepoUrl) {
+      customRepoUrl = 'https://github.com/tatesuke/KanTanMarkdown';
+    }
+
+    if (!parseGitHubRepoUrl(customRepoUrl)) {
+      alert(dict.alertInvalidUrl);
+      return;
     }
 
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {

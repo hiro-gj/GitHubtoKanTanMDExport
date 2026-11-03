@@ -126,9 +126,8 @@ async function clearTemplateCache(candidateUrls = []) {
 async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, attachmentsMetadata, edition: payloadEdition }) {
   // 1. 設定情報を取得
   const settings = await chrome.storage.local.get(['repo_type', 'custom_repo_url', 'edition']);
-  // original は動作停止しているため、fork を基本とし、未設定時または過去の original 設定時も hiro-gj 版へ安全フォールバック
-  const repoType = (settings.repo_type && settings.repo_type !== 'original') ? settings.repo_type : 'fork';
-  const customRepoUrl = settings.custom_repo_url || 'https://github.com/hiro-gj/KanTanMarkdown';
+  const repoType = settings.repo_type || 'fork';
+  const customRepoUrl = settings.custom_repo_url || (repoType === 'original' ? 'https://github.com/tatesuke/KanTanMarkdown' : 'https://github.com/hiro-gj/KanTanMarkdown');
   const edition = payloadEdition || settings.edition || 'lite';
 
   // 1.5 BackgroundからMarkdownデータをフェッチ
@@ -153,8 +152,14 @@ async function handleExport({ markdownFetchUrl, repoInfo, fileName, rawUrl, atta
   const templateFile = editionTemplates[edition] || 'ktm-lite.html';
   let candidateUrls = [`${templateBaseUrl}/dist/${templateFile}`];
 
-  if (repoType === 'custom' && customRepoUrl) {
+  if (customRepoUrl) {
     const parsed = parseGitHubRepoUrl(customRepoUrl);
+    if (parsed) {
+      templateBaseUrl = `https://${parsed.username}.github.io/${parsed.repo}`;
+      candidateUrls = buildTemplateCandidateUrls(parsed, templateFile);
+    }
+  } else if (repoType === 'original') {
+    const parsed = parseGitHubRepoUrl('https://github.com/tatesuke/KanTanMarkdown');
     if (parsed) {
       templateBaseUrl = `https://${parsed.username}.github.io/${parsed.repo}`;
       candidateUrls = buildTemplateCandidateUrls(parsed, templateFile);

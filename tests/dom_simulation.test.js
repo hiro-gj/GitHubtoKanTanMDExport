@@ -44,10 +44,10 @@ function mockDocument() {
   allElements = [];
   const enRadio = new ElementMock('input', { type: 'radio', name: 'language', value: 'en', checked: true });
   const jaRadio = new ElementMock('input', { type: 'radio', name: 'language', value: 'ja', checked: false });
-  const origRadio = new ElementMock('input', { type: 'radio', name: 'repo_type', value: 'original', disabled: true, checked: false });
+  const origRadio = new ElementMock('input', { type: 'radio', name: 'repo_type', value: 'original', disabled: false, checked: false });
   const forkRadio = new ElementMock('input', { type: 'radio', name: 'repo_type', value: 'fork', checked: true });
   const customRadio = new ElementMock('input', { type: 'radio', name: 'repo_type', value: 'custom', checked: false });
-  const customUrlInput = new ElementMock('input', { id: 'custom_repo_url', value: 'https://github.com/hiro-gj/KanTanMarkdown', disabled: true });
+  const customUrlInput = new ElementMock('input', { id: 'custom_repo_url', value: 'https://github.com/hiro-gj/KanTanMarkdown', disabled: false });
   const editionLite = new ElementMock('input', { type: 'radio', name: 'edition', value: 'lite', checked: true });
   const saveBtn = new ElementMock('button', { id: 'save-btn', 'data-i18n': 'btnSave' });
   const testBtn = new ElementMock('button', { id: 'test-btn', 'data-i18n': 'btnTest' });
@@ -55,13 +55,14 @@ function mockDocument() {
   const testResult = new ElementMock('div', { id: 'test-result' });
   const toast = new ElementMock('div', { id: 'toast', 'data-i18n': 'toastSaved' });
   const officialLink = new ElementMock('a', { id: 'official-repo-link', 'data-i18n': 'officialRepoLink' });
+  const labelRepoOriginal = new ElementMock('span', { id: 'label-repo-original', 'data-i18n': 'repoOriginal' });
   const labelRepoFork = new ElementMock('span', { id: 'label-repo-fork', 'data-i18n': 'repoFork' });
   const labelRepoCustom = new ElementMock('span', { id: 'label-repo-custom', 'data-i18n': 'repoCustom' });
 
   allElements = [
     enRadio, jaRadio, origRadio, forkRadio, customRadio,
     customUrlInput, editionLite, saveBtn, testBtn, cancelBtn,
-    testResult, toast, officialLink, labelRepoFork, labelRepoCustom
+    testResult, toast, officialLink, labelRepoOriginal, labelRepoFork, labelRepoCustom
   ];
 
   const doc = {
@@ -99,7 +100,7 @@ function mockDocument() {
     }
   };
 
-  return { doc, elements: { enRadio, jaRadio, origRadio, forkRadio, customRadio, customUrlInput, editionLite, saveBtn, testBtn, cancelBtn, testResult, toast, officialLink, labelRepoFork, labelRepoCustom } };
+  return { doc, elements: { enRadio, jaRadio, origRadio, forkRadio, customRadio, customUrlInput, editionLite, saveBtn, testBtn, cancelBtn, testResult, toast, officialLink, labelRepoOriginal, labelRepoFork, labelRepoCustom } };
 }
 
 
@@ -137,9 +138,9 @@ test('DOM Simulation - options.js 全機能とユーザー要望の整合性検�
   // 1. 初期ロード検証
   assert.strictEqual(elements.enRadio.checked, true, '初期言語は英語');
   assert.strictEqual(elements.forkRadio.checked, true, '初期リポジトリ選択はfork (hiro-gj)');
-  assert.strictEqual(elements.origRadio.disabled, true, 'オリジナルはdisabled');
+  assert.strictEqual(elements.origRadio.disabled, false, 'オリジナルはdisabledではない');
   assert.strictEqual(elements.customUrlInput.value, 'https://github.com/hiro-gj/KanTanMarkdown', 'URLはhiro-gj');
-  assert.strictEqual(elements.customUrlInput.disabled, true, 'fork選択時はURL非活性');
+  assert.strictEqual(elements.customUrlInput.disabled, false, 'fork選択時もURL活性（編集可能）');
   assert.strictEqual(elements.testBtn.disabled, false, '接続テストボタンは活性');
   assert.strictEqual(elements.officialLink.textContent, 'KanTanMarkdown Original Repository (Archived) here', '公式リンクラベルがアーカイブ表示');
 
@@ -148,15 +149,22 @@ test('DOM Simulation - options.js 全機能とユーザー要望の整合性検�
   assert.strictEqual(elements.customRadio.checked, true);
   assert.strictEqual(elements.customUrlInput.disabled, false, 'その他選択時はURL欄活性化');
 
+  elements.origRadio.click();
+  assert.strictEqual(elements.origRadio.checked, true);
+  assert.strictEqual(elements.customUrlInput.value, 'https://github.com/tatesuke/KanTanMarkdown', 'オリジナル選択時はオリジナルURLがセットされる');
+  assert.strictEqual(elements.customUrlInput.disabled, false, 'オリジナル選択時もURL欄活性化（編集可能）');
+  assert.strictEqual(elements.testBtn.disabled, false, 'オリジナル選択時は接続テストボタン活性');
+
   elements.forkRadio.click();
   assert.strictEqual(elements.forkRadio.checked, true);
   assert.strictEqual(elements.customUrlInput.value, 'https://github.com/hiro-gj/KanTanMarkdown', 'フォークURLが再セットされる');
-  assert.strictEqual(elements.customUrlInput.disabled, true, 'フォーク選択時はURL欄非活性');
+  assert.strictEqual(elements.customUrlInput.disabled, false, 'フォーク選択時もURL欄活性化（編集可能）');
 
   // 3. リアルタイム言語切り替え検証
   elements.jaRadio.click();
   assert.strictEqual(doc.title, 'かんたんMarkdown変換 拡張機能設定');
   assert.strictEqual(elements.officialLink.textContent, 'かんたんMarkdown オリジナルリポジトリ（アーカイブ）はこちら');
+  assert.strictEqual(elements.labelRepoOriginal.textContent, 'オリジナル(tatesuke)');
   assert.strictEqual(elements.labelRepoFork.textContent, 'フォーク(hiro-gj)');
   assert.strictEqual(elements.labelRepoCustom.textContent, 'その他（カスタムリポジトリURL入力）');
   assert.strictEqual(elements.saveBtn.textContent, '保存');
@@ -192,6 +200,22 @@ test('DOM Simulation - options.js 全機能とユーザー要望の整合性検�
   elements.saveBtn.click();
   assert.strictEqual(mockStorage.repo_type, 'custom');
   assert.strictEqual(mockStorage.custom_repo_url, 'https://github.com/hiro-gj/KanTanMarkdown/tree/master/dist/preview', 'サブパス付きGitHub URLがそのまま保存されること');
+
+  // 6. オリジナル選択後にURLを編集して保存できること
+  elements.origRadio.click();
+  assert.strictEqual(elements.customUrlInput.value, 'https://github.com/tatesuke/KanTanMarkdown', '初期値は元のURL');
+  elements.customUrlInput.value = 'https://github.com/tatesuke/KanTanMarkdown/tree/master';
+  elements.saveBtn.click();
+  assert.strictEqual(mockStorage.repo_type, 'original');
+  assert.strictEqual(mockStorage.custom_repo_url, 'https://github.com/tatesuke/KanTanMarkdown/tree/master', '編集したURLが保存されること');
+
+  // 7. fork選択後にURLを編集して保存できること
+  elements.forkRadio.click();
+  assert.strictEqual(elements.customUrlInput.value, 'https://github.com/hiro-gj/KanTanMarkdown', '初期値は元のURL');
+  elements.customUrlInput.value = 'https://github.com/hiro-gj/KanTanMarkdown/tree/master';
+  elements.saveBtn.click();
+  assert.strictEqual(mockStorage.repo_type, 'fork');
+  assert.strictEqual(mockStorage.custom_repo_url, 'https://github.com/hiro-gj/KanTanMarkdown/tree/master', '編集したURLが保存されること');
 });
 
 let allElements = [];

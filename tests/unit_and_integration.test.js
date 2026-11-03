@@ -18,9 +18,11 @@ test('1. options.html 静的初期状態の検証 (シナリオ1 & 5)', (t) => {
   // 公式アーカイブリンクの文言
   assert.ok(html.includes('KanTanMarkdown Original Repository (Archived) here'), 'アーカイブリンクラベルが英語であること');
 
-  // オリジナル(tatesuke)が disabled かつ radio-disabled スタイルを持つこと
-  assert.ok(/<input[^>]+name="repo_type"[^>]+value="original"[^>]+disabled/.test(html), 'オリジナルラジオがdisabledであること');
-  assert.ok(html.includes('class="radio-disabled"'), '非活性スタイルクラスが付与されていること');
+  // オリジナル(tatesuke)が活性であること、文言に利用不可やUnavailableが含まれないこと
+  assert.ok(/<input[^>]+name="repo_type"[^>]+value="original"/.test(html), 'オリジナルラジオが存在すること');
+  assert.ok(!/<input[^>]+name="repo_type"[^>]+value="original"[^>]+disabled/.test(html), 'オリジナルラジオが活性であること（disabledでない）');
+  assert.ok(!html.includes('Unavailable'), 'HTML内に Unavailable が含まれないこと');
+  assert.ok(!html.includes('利用不可'), 'HTML内に 利用不可 が含まれないこと');
 
   // リポジトリ選択の初期値が fork (hiro-gj) であること
   assert.ok(/<input[^>]+name="repo_type"[^>]+value="fork"[^>]+checked/.test(html), 'forkラジオが初期チェックされていること');
@@ -69,6 +71,8 @@ test('2. options.js の多言語辞書およびロジック検証 (シナリオ3
   assert.strictEqual(i18nDict.ja.pageTitle, 'かんたんMarkdown変換 拡張機能設定');
   assert.strictEqual(i18nDict.en.officialRepoLink, 'KanTanMarkdown Original Repository (Archived) here');
   assert.strictEqual(i18nDict.ja.officialRepoLink, 'かんたんMarkdown オリジナルリポジトリ（アーカイブ）はこちら');
+  assert.strictEqual(i18nDict.en.repoOriginal, 'Original (tatesuke)');
+  assert.strictEqual(i18nDict.ja.repoOriginal, 'オリジナル(tatesuke)');
   assert.strictEqual(i18nDict.en.repoFork, 'Fork (hiro-gj)');
   assert.strictEqual(i18nDict.ja.repoFork, 'フォーク(hiro-gj)');
   assert.strictEqual(i18nDict.en.btnSave, 'Save');
@@ -80,9 +84,10 @@ test('2. options.js の多言語辞書およびロジック検証 (シナリオ3
 test('3. background.js の初期値フォールバックおよびURL解決ロジック検証', (t) => {
   const bgContent = fs.readFileSync(path.join(repoRoot, 'background.js'), 'utf-8');
 
-  // フォールバックコードの存在
-  assert.ok(bgContent.includes("settings.repo_type !== 'original'"), 'original 設定時の安全フォールバックロジックが存在すること');
-  assert.ok(bgContent.includes("settings.repo_type : 'fork'"), '未設定時のフォールバック repo_type が fork であること');
+  // フォールバックコードおよびoriginal対応の存在
+  assert.ok(bgContent.includes("repoType === 'original'"), 'original 設定時のロジックが存在すること');
+  assert.ok(bgContent.includes("'https://github.com/tatesuke/KanTanMarkdown'"), 'original 指定リポジトリURLが tatesuke であること');
+  assert.ok(bgContent.includes("settings.repo_type || 'fork'") || bgContent.includes("settings.repo_type : 'fork'"), '未設定時のフォールバック repo_type が fork であること');
   assert.ok(bgContent.includes("'https://github.com/hiro-gj/KanTanMarkdown'"), '未設定時のフォールバックURLが hiro-gj であること');
   assert.ok(bgContent.includes("templateBaseUrl = 'https://hiro-gj.github.io/KanTanMarkdown'"), 'デフォルト templateBaseUrl が hiro-gj であること');
 
