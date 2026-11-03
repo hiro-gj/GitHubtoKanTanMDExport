@@ -4,6 +4,8 @@
 
 GoogleChrome拡張機能「GitHubMarkdown→かんたんMarkdown変換」
 
+- **Chrome ウェブストア**: [GitHub to KanTanMarkdown Export](https://chromewebstore.google.com/detail/github-to-kantanmarkdown/deeffccghbhkkldhpncadbnchnhdhnil)
+
 - **スナップショット**:
 
 |operation|option|
